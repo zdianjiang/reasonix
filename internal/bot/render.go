@@ -25,6 +25,7 @@ type renderSink struct {
 	ctrl       botController
 	onApproval func(event.Approval)
 	onAsk      func(event.Ask)
+	obs        renderObservability
 
 	// 渲染缓冲
 	buf           strings.Builder
@@ -36,6 +37,24 @@ type renderSink struct {
 	progressCount int
 }
 
+type renderRoute uint8
+
+const (
+	renderRouteNone renderRoute = 0
+	renderRouteIM   renderRoute = 1 << iota
+	renderRouteLog
+)
+
+type renderObservability struct {
+	Reasoning    renderRoute
+	ToolDispatch renderRoute
+	ToolProgress renderRoute
+	ToolResult   renderRoute
+}
+
+func (r renderRoute) hasIM() bool  { return r&renderRouteIM != 0 }
+func (r renderRoute) hasLog() bool { return r&renderRouteLog != 0 }
+
 const (
 	renderSoftFlushAfter      = 1200 * time.Millisecond
 	renderMaxChunkRunes       = 1800
@@ -44,7 +63,7 @@ const (
 	renderMaxProgressMessages = 3
 )
 
-func newRenderSink(ctx context.Context, adapter Adapter, connID, domain, chatID string, chatType ChatType, userID string, replyTo string, logger *slog.Logger, onApproval func(event.Approval), onAsk func(event.Ask)) *renderSink {
+func newRenderSink(ctx context.Context, adapter Adapter, connID, domain, chatID string, chatType ChatType, userID string, replyTo string, logger *slog.Logger, obs renderObservability, onApproval func(event.Approval), onAsk func(event.Ask)) *renderSink {
 	return &renderSink{
 		ctx:        ctx,
 		adapter:    adapter,
@@ -55,6 +74,7 @@ func newRenderSink(ctx context.Context, adapter Adapter, connID, domain, chatID 
 		userID:     userID,
 		replyTo:    replyTo,
 		logger:     logger,
+		obs:        obs,
 		onApproval: onApproval,
 		onAsk:      onAsk,
 		toolNames:  make(map[string]string),
@@ -79,6 +99,7 @@ func (s *renderSink) Emit(e event.Event) {
 		s.thinking.WriteString(e.Text)
 
 	case event.Text:
+		s.flushReasoningLog()
 		if s.inThinking {
 			s.inThinking = false
 		}
@@ -90,20 +111,75 @@ func (s *renderSink) Emit(e event.Event) {
 	case event.ToolDispatch:
 		name := renderToolName(e.Tool)
 		s.toolNames[e.Tool.ID] = name
-		s.sendProgress(fmt.Sprintf("正在执行: %s", name), false)
+		if s.obs.ToolDispatch.hasLog() {
+			phase := "final"
+			if e.Tool.Partial {
+				phase = "partial"
+			}
+			attrs := []any{
+				"tool", name,
+				"id", e.Tool.ID,
+				"dispatch_phase", phase,
+				"partial", e.Tool.Partial,
+				"read_only", e.Tool.ReadOnly,
+			}
+			if args := strings.TrimSpace(e.Tool.Args); args != "" {
+				attrs = append(attrs, "args", truncateForLog(args, 1200))
+			}
+			if parentID := strings.TrimSpace(e.Tool.ParentID); parentID != "" {
+				attrs = append(attrs, "parent_id", parentID)
+			}
+			if e.Tool.Profile != nil {
+				if model := strings.TrimSpace(e.Tool.Profile.Model); model != "" {
+					attrs = append(attrs, "profile_model", model)
+				}
+				if effort := strings.TrimSpace(e.Tool.Profile.Effort); effort != "" {
+					attrs = append(attrs, "profile_effort", effort)
+				}
+			}
+			if e.Tool.Diff != "" {
+				attrs = append(attrs, "diff_added", e.Tool.Added, "diff_removed", e.Tool.Removed)
+			}
+			s.logger.Info("bot tool dispatch", attrs...)
+		}
+		if s.obs.ToolDispatch.hasIM() {
+			s.sendProgress(fmt.Sprintf("正在执行: %s", name), false)
+		}
 
 	case event.ToolResult:
 		name := s.toolNames[e.Tool.ID]
 		if name == "" {
 			name = renderToolName(e.Tool)
 		}
-		if e.Tool.Err != "" {
+		if s.obs.ToolResult.hasLog() {
+			attrs := []any{
+				"tool", name,
+				"id", e.Tool.ID,
+				"duration_ms", e.Tool.DurationMs,
+				"truncated", e.Tool.Truncated,
+			}
+			if errText := strings.TrimSpace(e.Tool.Err); errText != "" {
+				attrs = append(attrs, "err", truncateForLog(errText, 1200))
+			}
+			if output := strings.TrimSpace(e.Tool.Output); output != "" {
+				attrs = append(attrs, "output", truncateForLog(output, 2000))
+			}
+			s.logger.Info("bot tool result", attrs...)
+		}
+		if s.obs.ToolResult.hasIM() && e.Tool.Err != "" {
 			s.sendProgress(fmt.Sprintf("%s 执行失败，稍后会在结果中说明。", name), true)
 		}
 
 	case event.ToolProgress:
-		// Keep streaming tool output out of IM channels; the session transcript
-		// still records the complete controller turn for desktop review.
+		if s.obs.ToolProgress.hasLog() {
+			s.logger.Info("bot tool progress", "tool", renderToolName(e.Tool), "id", e.Tool.ID, "output", truncateForLog(strings.TrimSpace(e.Tool.Output), 1200))
+		}
+		if s.obs.ToolProgress.hasIM() {
+			text := strings.TrimSpace(e.Tool.Output)
+			if text != "" {
+				s.sendProgress(text, false)
+			}
+		}
 
 	case event.ApprovalRequest:
 		// 发送审批请求
@@ -148,6 +224,7 @@ func (s *renderSink) Emit(e event.Event) {
 		_ = s.send(msg)
 
 	case event.TurnDone:
+		s.flushReasoningLog()
 		// 刷新缓冲
 		s.flush()
 		if e.Err != nil {
@@ -251,6 +328,19 @@ func (s *renderSink) sendProgress(text string, force bool) {
 	s.lastProgress = now
 }
 
+func (s *renderSink) flushReasoningLog() {
+	text := strings.TrimSpace(s.thinking.String())
+	if text == "" {
+		return
+	}
+	if s.obs.Reasoning.hasLog() {
+		s.logger.Info("bot reasoning", "text", truncateForLog(text, 4000))
+	}
+	if !s.obs.Reasoning.hasIM() {
+		s.thinking.Reset()
+	}
+}
+
 func renderToolName(t event.Tool) string {
 	if name := strings.TrimSpace(t.Name); name != "" {
 		return name
@@ -259,6 +349,15 @@ func renderToolName(t event.Tool) string {
 		return id
 	}
 	return "tool"
+}
+
+func truncateForLog(text string, max int) string {
+	text = strings.TrimSpace(text)
+	if max <= 0 || len([]rune(text)) <= max {
+		return text
+	}
+	r := []rune(text)
+	return strings.TrimSpace(string(r[:max])) + "…"
 }
 
 func renderFlushIndex(text string, elapsed time.Duration) int {

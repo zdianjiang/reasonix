@@ -202,6 +202,48 @@ command = "cwd-project-bin"
 	}
 }
 
+func TestRunGlobalConfigFlagBypassesUserConfig(t *testing.T) {
+	isolateCLIConfigHome(t)
+	userCfg := config.Default()
+	userCfg.Language = "en"
+	userCfg.Bot.Enabled = true
+	if err := userCfg.SaveTo(config.UserConfigPath()); err != nil {
+		t.Fatalf("save user config: %v", err)
+	}
+
+	project := t.TempDir()
+	projectPath := filepath.Join(project, "reasonix.toml")
+	if err := os.WriteFile(projectPath, []byte(`
+language = "zh-CN"
+
+[bot]
+enabled = false
+`), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if rc := Run([]string{"--config", projectPath, "bot", "doctor", "--json"}, "test"); rc != 0 {
+			t.Fatalf("Run rc = %d, want 0", rc)
+		}
+	})
+	if !strings.Contains(out, `"name":"bot.enabled","status":"disabled"`) {
+		t.Fatalf("bot doctor did not use explicit config override:\n%s", out)
+	}
+	if strings.Contains(out, `"name":"bot.enabled","status":"ok"`) {
+		t.Fatalf("bot doctor unexpectedly used user-global bot config:\n%s", out)
+	}
+
+	out = captureStdout(t, func() {
+		if rc := Run([]string{"bot", "doctor", "--json"}, "test"); rc != 0 {
+			t.Fatalf("Run rc = %d, want 0", rc)
+		}
+	})
+	if !strings.Contains(out, `"name":"bot.enabled","status":"ok"`) {
+		t.Fatalf("global config override leaked or user config not restored:\n%s", out)
+	}
+}
+
 func hasPluginNamed(cfg *config.Config, name string) bool {
 	if cfg == nil {
 		return false

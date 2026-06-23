@@ -597,6 +597,19 @@ func Build(ctx context.Context, opts Options) (*control.Controller, error) {
 		parentID, _, _, _ := agent.CallContext(sctx)
 		parentSession := agent.ParentSession(sctx)
 		var run *agent.SubagentRun
+		identityModel, identityEffort := subagentIdentity(modelRef, effortRef)
+		prepareMode := "ephemeral"
+		prepareRef := ""
+		if continueFrom != "" {
+			prepareMode = "continue"
+			prepareRef = continueFrom
+		} else if forkFrom != "" {
+			prepareMode = "fork"
+			prepareRef = forkFrom
+		} else if subagentStore != nil && parentSession != "" {
+			prepareMode = "fresh"
+		}
+		slog.Info("skill subagent prepare", "skill", sk.Name, "parent_tool_id", parentID, "parent_session", parentSession, "mode", prepareMode, "ref", prepareRef, "task", truncateLogField(task, 800), "model_ref", modelRef, "effort_ref", effortRef)
 		if subagentStore == nil || parentSession == "" {
 			// Headless runs (e.g. `reasonix run`) have no persistent session to
 			// own a transcript. Run the skill sub-agent ephemerally, as before
@@ -607,7 +620,6 @@ func Build(ctx context.Context, opts Options) (*control.Controller, error) {
 			}
 			run = agent.EphemeralSubagentRun(sk.Body)
 		} else {
-			identityModel, identityEffort := subagentIdentity(modelRef, effortRef)
 			spec := agent.SubagentSpec{
 				Kind:             "skill",
 				Name:             sk.Name,
@@ -629,9 +641,11 @@ func Build(ctx context.Context, opts Options) (*control.Controller, error) {
 				run, prepErr = subagentStore.PrepareFresh(spec)
 			}
 			if prepErr != nil {
+				slog.Error("skill subagent prepare failed", "skill", sk.Name, "parent_tool_id", parentID, "mode", prepareMode, "ref", prepareRef, "err", prepErr)
 				return "", prepErr
 			}
 		}
+		slog.Info("skill subagent prepared", "skill", sk.Name, "parent_tool_id", parentID, "mode", prepareMode, "ref", prepareRef, "subagent_ref", run.Ref, "ephemeral", run.Ref == "", "model", identityModel, "effort", identityEffort)
 		defer run.Release()
 		steps := maxSteps
 		if steps > 0 {
@@ -639,6 +653,8 @@ func Build(ctx context.Context, opts Options) (*control.Controller, error) {
 				steps = 5
 			}
 		}
+		startedAt := time.Now()
+		slog.Info("skill subagent run start", "skill", sk.Name, "parent_tool_id", parentID, "subagent_ref", run.Ref, "steps", steps, "tool_count", subReg.Len(), "model", identityModel, "effort", identityEffort)
 		answer, err := agent.RunSubAgentWithSession(sctx, prov, subReg, run.Session, task, agent.Options{
 			MaxSteps:          steps,
 			Temperature:       cfg.Agent.Temperature,
@@ -651,10 +667,14 @@ func Build(ctx context.Context, opts Options) (*control.Controller, error) {
 			KeepPolicy:        keepPolicy,
 			ReasoningLanguage: agent.ReasoningLanguageFromContext(sctx),
 		}, agent.NestedSink(sctx, event.Discard))
+		duration := time.Since(startedAt)
 		if err != nil {
+			slog.Error("skill subagent run failed", "skill", sk.Name, "parent_tool_id", parentID, "subagent_ref", run.Ref, "duration_ms", duration.Milliseconds(), "err", err)
 			return "", errors.Join(err, subagentStore.SaveFailed(run))
 		}
+		slog.Info("skill subagent run completed", "skill", sk.Name, "parent_tool_id", parentID, "subagent_ref", run.Ref, "duration_ms", duration.Milliseconds(), "answer", truncateLogField(answer, 1200))
 		if err := subagentStore.SaveCompleted(run); err != nil {
+			slog.Error("skill subagent save completed failed", "skill", sk.Name, "parent_tool_id", parentID, "subagent_ref", run.Ref, "err", err)
 			return "", errors.Join(err, subagentStore.SaveFailed(run))
 		}
 		return agent.FormatSubagentResult(answer, run.Ref, false), nil
@@ -1008,6 +1028,18 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func truncateLogField(text string, max int) string {
+	text = strings.TrimSpace(text)
+	if max <= 0 {
+		return text
+	}
+	r := []rune(text)
+	if len(r) <= max {
+		return text
+	}
+	return strings.TrimSpace(string(r[:max])) + "…"
 }
 
 func subagentModelRef(cfg *config.Config, sk skill.Skill) string {

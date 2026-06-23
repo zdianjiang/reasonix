@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 
@@ -22,6 +23,11 @@ import (
 	"reasonix/internal/netclient"
 	"reasonix/internal/provider"
 )
+
+var explicitConfigOverride struct {
+	sync.RWMutex
+	path string
+}
 
 var validSkillName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
@@ -405,16 +411,24 @@ type StatuslineConfig struct {
 
 // BotConfig 控制多渠道 IM bot 消息网关。
 type BotConfig struct {
-	Enabled          bool                  `toml:"enabled"`
-	Model            string                `toml:"model"` // 用于 bot 的模型名，空则用 default_model
-	ToolApprovalMode string                `toml:"tool_approval_mode"`
-	MaxSteps         int                   `toml:"max_steps"`
-	DebounceMs       int                   `toml:"debounce_ms"` // 消息合并窗口，毫秒
-	Allowlist        BotAllowlist          `toml:"allowlist"`
-	QQ               QQBotConfig           `toml:"qq"`
-	Feishu           FeishuBotConfig       `toml:"feishu"`
-	Weixin           WeixinBotConfig       `toml:"weixin"`
-	Connections      []BotConnectionConfig `toml:"connections"`
+	Enabled          bool                   `toml:"enabled"`
+	Model            string                 `toml:"model"` // 用于 bot 的模型名，空则用 default_model
+	ToolApprovalMode string                 `toml:"tool_approval_mode"`
+	MaxSteps         int                    `toml:"max_steps"`
+	DebounceMs       int                    `toml:"debounce_ms"` // 消息合并窗口，毫秒
+	Observability    BotObservabilityConfig `toml:"observability"`
+	Allowlist        BotAllowlist           `toml:"allowlist"`
+	QQ               QQBotConfig            `toml:"qq"`
+	Feishu           FeishuBotConfig        `toml:"feishu"`
+	Weixin           WeixinBotConfig        `toml:"weixin"`
+	Connections      []BotConnectionConfig  `toml:"connections"`
+}
+
+type BotObservabilityConfig struct {
+	Reasoning    string `toml:"reasoning"`     // off|im|log|both
+	ToolDispatch string `toml:"tool_dispatch"` // off|im|log|both
+	ToolProgress string `toml:"tool_progress"` // off|im|log|both
+	ToolResult   string `toml:"tool_result"`   // off|im|log|both
 }
 
 // BotAllowlist 控制哪些用户可以使用 bot。
@@ -1176,10 +1190,16 @@ func Default() *Config {
 			ToolApprovalMode: "ask",
 			MaxSteps:         25,
 			DebounceMs:       1500,
-			Allowlist:        BotAllowlist{Enabled: true},
-			QQ:               QQBotConfig{AppSecretEnv: "QQ_BOT_APP_SECRET"},
-			Feishu:           FeishuBotConfig{Domain: "feishu", AppSecretEnv: "FEISHU_BOT_APP_SECRET", Mode: "webhook", WebhookPort: 8080, RequireMention: true},
-			Weixin:           WeixinBotConfig{AccountID: "default", TokenEnv: "WEIXIN_BOT_TOKEN", APIBase: "https://ilinkai.weixin.qq.com"},
+			Observability: BotObservabilityConfig{
+				Reasoning:    "off",
+				ToolDispatch: "im",
+				ToolProgress: "off",
+				ToolResult:   "off",
+			},
+			Allowlist: BotAllowlist{Enabled: true},
+			QQ:        QQBotConfig{AppSecretEnv: "QQ_BOT_APP_SECRET"},
+			Feishu:    FeishuBotConfig{Domain: "feishu", AppSecretEnv: "FEISHU_BOT_APP_SECRET", Mode: "webhook", WebhookPort: 8080, RequireMention: true},
+			Weixin:    WeixinBotConfig{AccountID: "default", TokenEnv: "WEIXIN_BOT_TOKEN", APIBase: "https://ilinkai.weixin.qq.com"},
 		},
 		Providers: []ProviderEntry{
 			{Name: "deepseek-flash", Kind: "openai", BaseURL: "https://api.deepseek.com", Model: "deepseek-v4-flash", APIKeyEnv: "DEEPSEEK_API_KEY", BalanceURL: "https://api.deepseek.com/user/balance", ContextWindow: 1_000_000, Price: deepSeekV4FlashPrice()},
@@ -1406,15 +1426,20 @@ func LoadForRoot(root string) (*Config, error) {
 	cfg.CredentialsStore = credentialsStoreMode()
 
 	projectTOML := "reasonix.toml"
-	if root != "." {
+	explicitPath := explicitConfigPath()
+	if explicitPath != "" {
+		projectTOML = explicitPath
+	} else if root != "." {
 		projectTOML = filepath.Join(root, "reasonix.toml")
 	}
 
 	var tomlSources []string
-	if uc := userConfigLoadPath(); uc != "" {
-		tomlSources = append(tomlSources, uc)
-		if err := mergeRuntimeTOMLFile(cfg, uc); err != nil {
-			return nil, err
+	if explicitPath == "" {
+		if uc := userConfigLoadPath(); uc != "" {
+			tomlSources = append(tomlSources, uc)
+			if err := mergeRuntimeTOMLFile(cfg, uc); err != nil {
+				return nil, err
+			}
 		}
 	}
 	globalMaxSteps := cfg.Agent.MaxSteps
@@ -1485,8 +1510,12 @@ func LoadForRoot(root string) (*Config, error) {
 
 func userAutoPlanMode() string {
 	cfg := Default()
-	if uc := userConfigLoadPath(); uc != "" {
-		_ = mergeFile(cfg, uc)
+	if explicitConfigPath() == "" {
+		if uc := userConfigLoadPath(); uc != "" {
+			_ = mergeFile(cfg, uc)
+		}
+	} else {
+		_ = mergeFile(cfg, explicitConfigPath())
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Agent.AutoPlan)) {
 	case "on", "ask":
@@ -1577,6 +1606,9 @@ func officialProviderKind(p *ProviderEntry) string {
 }
 
 func resolveRoot(root string) string {
+	if path := explicitConfigPath(); path != "" && (root == "" || root == ".") {
+		return filepath.Dir(path)
+	}
 	if root == "" || root == "." {
 		return "."
 	}
@@ -2448,6 +2480,9 @@ func retargetDesktopOfficialRef(ref string, access map[string]bool) string {
 }
 
 func userConfigPath() string {
+	if path := explicitConfigPath(); path != "" {
+		return path
+	}
 	dir := userConfigDir()
 	if dir == "" {
 		return ""
@@ -2647,6 +2682,24 @@ func userConfigDisplayPath() string {
 // or %AppData%/reasonix/config.toml on Windows. "" when the user config dir
 // can't be resolved.
 func UserConfigPath() string { return userConfigPath() }
+
+// SetExplicitConfigPath forces runtime config loads to use one specific TOML
+// file and skip user-global config merging until cleared again. An empty path
+// clears the override.
+func SetExplicitConfigPath(path string) {
+	explicitConfigOverride.Lock()
+	explicitConfigOverride.path = strings.TrimSpace(path)
+	explicitConfigOverride.Unlock()
+}
+
+func explicitConfigPath() string {
+	explicitConfigOverride.RLock()
+	defer explicitConfigOverride.RUnlock()
+	return explicitConfigOverride.path
+}
+
+// ExplicitConfigPath returns the active process-level --config override, if any.
+func ExplicitConfigPath() string { return explicitConfigPath() }
 
 // LegacyUserConfigPath is the old OS app-support config.toml path when it
 // differs from UserConfigPath. It is read as a compatibility fallback when the

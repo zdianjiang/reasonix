@@ -148,6 +148,12 @@ stalled_warning_seconds = 900   # warn once per background job after this many q
 # max_steps  = 25
 # debounce_ms = 1500      # 消息合并窗口（毫秒）
 #
+# [bot.observability]
+# reasoning = "off"       # off | im | log | both
+# tool_dispatch = "im"    # off | im | log | both
+# tool_progress = "off"   # off | im | log | both
+# tool_result = "off"     # off | im | log | both
+#
 # [bot.allowlist]
 # enabled     = true
 # allow_all   = false     # true 会允许所有可触达用户远程触发 bot，仅限受控环境

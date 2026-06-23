@@ -416,6 +416,11 @@ func RenderTOMLForScope(c *Config, scope RenderScope) string {
 		}
 		fmt.Fprintf(&b, "max_steps = %d\n", c.Bot.MaxSteps)
 		fmt.Fprintf(&b, "debounce_ms = %d\n", c.Bot.DebounceMs)
+		b.WriteString("\n[bot.observability]\n")
+		fmt.Fprintf(&b, "reasoning = %q\n", c.Bot.Observability.Reasoning)
+		fmt.Fprintf(&b, "tool_dispatch = %q\n", c.Bot.Observability.ToolDispatch)
+		fmt.Fprintf(&b, "tool_progress = %q\n", c.Bot.Observability.ToolProgress)
+		fmt.Fprintf(&b, "tool_result = %q\n", c.Bot.Observability.ToolResult)
 		b.WriteString("\n[bot.allowlist]\n")
 		fmt.Fprintf(&b, "enabled = %v\n", c.Bot.Allowlist.Enabled)
 		fmt.Fprintf(&b, "allow_all = %v\n", c.Bot.Allowlist.AllowAll)

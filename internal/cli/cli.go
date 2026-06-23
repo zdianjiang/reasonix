@@ -44,6 +44,7 @@ var (
 
 // Run is the CLI entry point; it returns a process exit code.
 func Run(args []string, version string) int {
+	args = applyGlobalConfigOverride(args)
 	// Pick the UI language up front so even pre-config paths (the first-run
 	// welcome banner) come through localized. Env-only first; if a config
 	// exists and pins a language, that wins.
@@ -128,6 +129,37 @@ func Run(args []string, version string) int {
 		usage()
 		return 2
 	}
+}
+
+func applyGlobalConfigOverride(args []string) []string {
+	path, filtered := extractGlobalConfigFlag(args)
+	config.SetExplicitConfigPath(path)
+	return filtered
+}
+
+func extractGlobalConfigFlag(args []string) (string, []string) {
+	if len(args) == 0 {
+		return "", args
+	}
+	out := make([]string, 0, len(args))
+	var path string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--config":
+			if i+1 < len(args) {
+				path = args[i+1]
+				i++
+				continue
+			}
+			out = append(out, arg)
+		case strings.HasPrefix(arg, "--config="):
+			path = strings.TrimSpace(strings.TrimPrefix(arg, "--config="))
+		default:
+			out = append(out, arg)
+		}
+	}
+	return strings.TrimSpace(path), out
 }
 
 func isDefaultInteractiveFlag(arg string) bool {

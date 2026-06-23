@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -48,15 +49,23 @@ func botStart(args []string, version string) int {
 	channels := fs.String("channels", "", "启用的平台，逗号分隔：qq,feishu,lark,weixin")
 	dir := fs.String("dir", "", "工作目录")
 	model := fs.String("model", "", "模型名（空则用 default_model）")
+	daemon := fs.Bool("daemon", false, "后台运行 bot 并立即返回")
+	pidFile := fs.String("pid-file", "", "daemon 模式下写入 PID 的文件路径（默认 <dir>/reasonix-bot.pid）")
+	logFile := fs.String("log-file", "", "daemon 模式下日志输出文件（默认 <dir>/reasonix-bot.log）")
+	foreground := fs.Bool("foreground", false, "daemon 子进程内部使用：以前台主循环运行")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
+	if *daemon && !*foreground {
+		return botStartDaemon(args, strings.TrimSpace(*dir), strings.TrimSpace(*pidFile), strings.TrimSpace(*logFile))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cfg, err := loadBotCommandConfig()
+	cfg, err := loadBotCommandConfig("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: load config: %v\n", err)
 		return 1
@@ -98,6 +107,7 @@ func botStart(args []string, version string) int {
 		Model:              modelName,
 		ToolApprovalMode:   cfg.Bot.ToolApprovalMode,
 		MaxSteps:           cfg.Bot.MaxSteps,
+		Observability:      cfg.Bot.Observability,
 		WorkspaceRoot:      workspaceRoot,
 		Channels:           botruntime.ChannelConfigs(cfg.Bot.Connections, *model == "", *dir == ""),
 		ConnectionChannels: botruntime.ConnectionChannelConfigs(cfg.Bot.Connections, *model == "", *dir == ""),
@@ -164,7 +174,7 @@ func botDoctor(args []string) int {
 		return 2
 	}
 
-	cfg, err := loadBotCommandConfig()
+	cfg, err := loadBotCommandConfig("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: load config: %v\n", err)
 		return 1
@@ -316,7 +326,7 @@ func botWeixinLogin(args []string) int {
 		return 2
 	}
 
-	cfg, err := loadBotCommandConfig()
+	cfg, err := loadBotCommandConfig("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: load config: %v\n", err)
 		return 1
@@ -340,7 +350,8 @@ func botWeixinLogin(args []string) int {
 	return 0
 }
 
-func loadBotCommandConfig() (*config.Config, error) {
+func loadBotCommandConfig(path string) (*config.Config, error) {
+	path = strings.TrimSpace(path)
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -369,11 +380,97 @@ func botConfigIsUserOwned(bc config.BotConfig) bool {
 	return len(bc.Allowlist.QQGroups)+len(bc.Allowlist.FeishuGroups)+len(bc.Allowlist.WeixinGroups) > 0
 }
 
+func botStartDaemon(args []string, workDir, pidPath, logPath string) int {
+	if strings.TrimSpace(workDir) == "" {
+		workDir = botFlagValue(args, "--dir")
+	}
+	if strings.TrimSpace(workDir) == "" {
+		if wd, err := os.Getwd(); err == nil {
+			workDir = wd
+		}
+	}
+	if strings.TrimSpace(workDir) == "" {
+		workDir = "."
+	}
+	if abs, err := filepath.Abs(workDir); err == nil {
+		workDir = abs
+	}
+
+	if logPath == "" {
+		logPath = strings.TrimSpace(botFlagValue(args, "--log-file"))
+	}
+	if logPath == "" {
+		logPath = filepath.Join(workDir, "reasonix-bot.log")
+	} else if !filepath.IsAbs(logPath) {
+		logPath = filepath.Join(workDir, logPath)
+	}
+	if pidPath == "" {
+		pidPath = strings.TrimSpace(botFlagValue(args, "--pid-file"))
+	}
+	if pidPath == "" {
+		pidPath = filepath.Join(workDir, "reasonix-bot.pid")
+	} else if !filepath.IsAbs(pidPath) {
+		pidPath = filepath.Join(workDir, pidPath)
+	}
+
+	logFH, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: open log file: %v\n", err)
+		return 1
+	}
+	defer logFH.Close()
+
+	bin, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: resolve executable: %v\n", err)
+		return 1
+	}
+	childArgs := []string{}
+	for _, arg := range os.Args[1:] {
+		if arg == "--daemon" || strings.HasPrefix(arg, "--daemon=") {
+			continue
+		}
+		childArgs = append(childArgs, arg)
+	}
+	childArgs = append(childArgs, "--foreground")
+
+	procAttr := &os.ProcAttr{
+		Dir:   workDir,
+		Env:   os.Environ(),
+		Files: []*os.File{nil, logFH, logFH},
+		Sys:   &syscall.SysProcAttr{Setsid: true},
+	}
+	proc, err := os.StartProcess(bin, append([]string{bin}, childArgs...), procAttr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: start daemon: %v\n", err)
+		return 1
+	}
+	_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", proc.Pid)), 0o644)
+	fmt.Fprintf(os.Stderr, "reasonix bot daemon started: pid=%d log=%s pid_file=%s\n", proc.Pid, logPath, pidPath)
+	return 0
+}
+
+func botFlagValue(args []string, name string) string {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == name {
+			if i+1 < len(args) {
+				return strings.TrimSpace(args[i+1])
+			}
+			return ""
+		}
+		if strings.HasPrefix(arg, name+"=") {
+			return strings.TrimSpace(strings.TrimPrefix(arg, name+"="))
+		}
+	}
+	return ""
+}
+
 func botUsage() {
 	fmt.Print(`reasonix bot — multi-channel IM bot gateway (QQ / Feishu / WeChat)
 
 Usage:
-  reasonix bot start   [--channels qq,feishu,lark,weixin] [--dir PATH] [--model NAME]
+  reasonix bot start   [--channels qq,feishu,lark,weixin] [--dir PATH] [--model NAME] [--daemon] [--pid-file FILE] [--log-file FILE]
   reasonix bot doctor  [--json]
   reasonix bot weixin-login [--timeout SECONDS]
 
@@ -385,6 +482,7 @@ Subcommands:
 Examples:
   reasonix bot start --channels qq,feishu
   reasonix bot start --dir /path/to/project --model deepseek-pro
+  reasonix bot start --channels feishu --dir . --daemon
   reasonix bot doctor --json
 
 Configuration:

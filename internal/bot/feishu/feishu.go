@@ -345,9 +345,11 @@ func (a *adapter) handleCardAction(raw []byte) bool {
 	}
 	command := payload.Event.Action.Value["command"]
 	if command == "" || payload.Event.Context.OpenChatID == "" {
+		a.logger.Warn("feishu card action rejected", "reason", "missing_command_or_chat", "event_id", payload.Header.EventID != "")
 		return false
 	}
 	if a.markSeen(payload.Header.EventID) {
+		a.logger.Info("feishu card action deduped", "chat", logHash(payload.Event.Context.OpenChatID), "command", command)
 		return true
 	}
 	chatType := cardActionChatType(payload.Event.Action.Value["chat_type"])
@@ -360,6 +362,7 @@ func (a *adapter) handleCardAction(raw []byte) bool {
 		payload.Event.Operator.UserID,
 	)
 	routeUserID := firstNonEmpty(payload.Event.Action.Value["user_id"], operatorID)
+	a.logger.Info("feishu card action received", "chat_type", chatType, "chat", logHash(payload.Event.Context.OpenChatID), "message", logHash(payload.Event.Context.OpenMessageID), "operator", logHash(operatorID), "route_user", logHash(routeUserID), "command", command)
 	ib := bot.InboundMessage{
 		Platform:   bot.PlatformFeishu,
 		ChatType:   chatType,
@@ -372,8 +375,9 @@ func (a *adapter) handleCardAction(raw []byte) bool {
 	}
 	select {
 	case a.msgCh <- ib:
+		a.logger.Info("feishu card action queued", "chat", logHash(ib.ChatID), "message", logHash(ib.MessageID), "operator", logHash(operatorID), "command", command)
 	default:
-		a.logger.Warn("feishu card action channel full")
+		a.logger.Warn("feishu card action channel full", "chat", logHash(ib.ChatID), "message", logHash(ib.MessageID), "command", command)
 	}
 	return true
 }
