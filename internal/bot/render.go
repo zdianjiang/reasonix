@@ -290,6 +290,8 @@ func (s *renderSink) flushPrefix(idx int) {
 		s.lastFlush = time.Now()
 		return
 	}
+	remaining := raw[idx:]
+	s.logger.Info("bot final flush chunk", "chat_type", s.chatType, "chat", hashID(s.chatID), "reply_to", hashID(s.replyTo), "chunk_runes", len([]rune(text)), "remaining_runes", len([]rune(strings.TrimSpace(remaining))))
 	_ = s.send(OutboundMessage{
 		ConnectionID: s.connID,
 		Domain:       s.domain,
@@ -298,7 +300,6 @@ func (s *renderSink) flushPrefix(idx int) {
 		Text:         text,
 		ReplyToMsgID: s.replyTo,
 	})
-	remaining := raw[idx:]
 	s.buf.Reset()
 	s.buf.WriteString(remaining)
 	s.lastFlush = time.Now()

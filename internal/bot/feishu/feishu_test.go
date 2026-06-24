@@ -225,6 +225,50 @@ func TestHandleCardActionDoesNotTrustCardRequesterAsOperator(t *testing.T) {
 	}
 }
 
+func TestHandleMessageAcceptsPostWithMention(t *testing.T) {
+	a := &adapter{
+		cfg:    config.FeishuBotConfig{RequireMention: true},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		msgCh:  make(chan bot.InboundMessage, 1),
+	}
+	a.handleMessage(feishuMsgEvent{
+		MessageID: "msg-post",
+		ChatID:    "chat-post",
+		ChatType:  "group",
+		MsgType:   "post",
+		Content:   `{"zh_cn":{"title":"","content":[[{"tag":"at","user_name":"Reasonix"},{"tag":"text","text":" 查库存 0402 10k"}]]}}`,
+	})
+
+	msg := <-a.msgCh
+	if msg.ChatType != bot.ChatGroup {
+		t.Fatalf("chat type = %q, want group", msg.ChatType)
+	}
+	if !strings.Contains(msg.Text, "查库存 0402 10k") {
+		t.Fatalf("text = %q, want parsed post text", msg.Text)
+	}
+}
+
+func TestHandleMessageRejectsPostWithoutMentionWhenRequired(t *testing.T) {
+	a := &adapter{
+		cfg:    config.FeishuBotConfig{RequireMention: true},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		msgCh:  make(chan bot.InboundMessage, 1),
+	}
+	a.handleMessage(feishuMsgEvent{
+		MessageID: "msg-post-no-mention",
+		ChatID:    "chat-post",
+		ChatType:  "group",
+		MsgType:   "post",
+		Content:   `{"zh_cn":{"title":"","content":[[{"tag":"text","text":"查库存 0402 10k"}]]}}`,
+	})
+
+	select {
+	case msg := <-a.msgCh:
+		t.Fatalf("unexpected message queued: %+v", msg)
+	default:
+	}
+}
+
 func TestHandleMessageTreatsTopicGroupAsGroup(t *testing.T) {
 	a := &adapter{
 		cfg:    config.FeishuBotConfig{RequireMention: true},

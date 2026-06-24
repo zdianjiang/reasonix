@@ -38,6 +38,22 @@ type textContent struct {
 	Text string `json:"text"`
 }
 
+type postContent struct {
+	ZhCN *postBody `json:"zh_cn"`
+	EnUS *postBody `json:"en_us"`
+}
+
+type postBody struct {
+	Title   string          `json:"title"`
+	Content [][]postElement `json:"content"`
+}
+
+type postElement struct {
+	Tag      string `json:"tag"`
+	Text     string `json:"text"`
+	UserName string `json:"user_name"`
+}
+
 const feishuPendingReactionEmoji = "OnIt"
 
 // feishuEvent 飞书事件结构。
@@ -253,19 +269,20 @@ func (a *adapter) handleSDKMessage(event *larkim.P2MessageReceiveV1) {
 		}
 	}
 	msg := event.Event.Message
-	if stringPtrValue(msg.MessageType) != "text" {
-		a.logger.Info("feishu message ignored", "reason", "non_text", "msg_type", stringPtrValue(msg.MessageType), "chat_type", stringPtrValue(msg.ChatType), "message", logHash(stringPtrValue(msg.MessageId)))
-		return
-	}
-	var content textContent
-	if err := json.Unmarshal([]byte(stringPtrValue(msg.Content)), &content); err != nil {
-		a.logger.Warn("feishu message ignored", "reason", "bad_content", "message", logHash(stringPtrValue(msg.MessageId)), "err", err)
+	msgType := stringPtrValue(msg.MessageType)
+	contentText, mentionCount, reason, ok := decodeIncomingContent(msgType, stringPtrValue(msg.Content))
+	if !ok {
+		attrs := []any{"reason", reason, "msg_type", msgType, "chat_type", stringPtrValue(msg.ChatType), "message", logHash(stringPtrValue(msg.MessageId))}
+		if strings.HasPrefix(reason, "post_") || strings.HasSuffix(reason, "_decode_failed") {
+			attrs = append(attrs, "content", truncateContentForLog(stringPtrValue(msg.Content), 4000))
+		}
+		a.logger.Info("feishu message ignored", attrs...)
 		return
 	}
 	chatType := bot.ChatDM
 	if stringPtrValue(msg.ChatType) == "group" || stringPtrValue(msg.ChatType) == "topic_group" {
 		chatType = bot.ChatGroup
-		if a.cfg.RequireMention && len(msg.Mentions) == 0 {
+		if a.cfg.RequireMention && len(msg.Mentions) == 0 && mentionCount == 0 {
 			a.logger.Info("feishu message ignored", "reason", "missing_mention", "chat", logHash(stringPtrValue(msg.ChatId)), "message", logHash(stringPtrValue(msg.MessageId)))
 			return
 		}
@@ -284,7 +301,7 @@ func (a *adapter) handleSDKMessage(event *larkim.P2MessageReceiveV1) {
 		ChatID:    stringPtrValue(msg.ChatId),
 		UserID:    userID,
 		UserName:  userID,
-		Text:      content.Text,
+		Text:      contentText,
 		MessageID: stringPtrValue(msg.MessageId),
 		ThreadID:  stringPtrValue(msg.ThreadId),
 		Raw:       event,
@@ -315,6 +332,80 @@ func (a *adapter) handleWSEvent(ctx context.Context, raw json.RawMessage) {
 		}
 		a.handleMessage(msg)
 	}
+}
+
+func truncateContentForLog(raw string, max int) string {
+	raw = strings.TrimSpace(raw)
+	if max <= 0 {
+		return raw
+	}
+	r := []rune(raw)
+	if len(r) <= max {
+		return raw
+	}
+	return strings.TrimSpace(string(r[:max])) + "…"
+}
+
+func decodeIncomingContent(msgType, raw string) (string, int, string, bool) {
+	switch strings.TrimSpace(msgType) {
+	case "text":
+		var content textContent
+		if err := json.Unmarshal([]byte(raw), &content); err != nil {
+			return "", 0, "text_decode_failed", false
+		}
+		return strings.TrimSpace(content.Text), 0, "", true
+	case "post":
+		return decodePostContent(raw)
+	default:
+		return "", 0, "unsupported_msg_type", false
+	}
+}
+
+func decodePostContent(raw string) (string, int, string, bool) {
+	var content postContent
+	if err := json.Unmarshal([]byte(raw), &content); err != nil {
+		return "", 0, "post_decode_failed", false
+	}
+	body := content.ZhCN
+	if body == nil {
+		body = content.EnUS
+	}
+	if body == nil {
+		var direct postBody
+		if err := json.Unmarshal([]byte(raw), &direct); err == nil && len(direct.Content) > 0 {
+			body = &direct
+		}
+	}
+	if body == nil {
+		return "", 0, "post_missing_locale", false
+	}
+	var parts []string
+	mentionCount := 0
+	for _, line := range body.Content {
+		var lineParts []string
+		for _, el := range line {
+			switch el.Tag {
+			case "text":
+				if strings.TrimSpace(el.Text) != "" {
+					lineParts = append(lineParts, el.Text)
+				}
+			case "at":
+				mentionCount++
+				name := strings.TrimSpace(el.UserName)
+				if name != "" {
+					lineParts = append(lineParts, "@"+name)
+				}
+			}
+		}
+		if len(lineParts) > 0 {
+			parts = append(parts, strings.Join(lineParts, ""))
+		}
+	}
+	text := strings.TrimSpace(strings.Join(parts, "\n"))
+	if text == "" && mentionCount == 0 {
+		return "", 0, "post_empty_content", false
+	}
+	return text, mentionCount, "", true
 }
 
 func (a *adapter) handleCardAction(raw []byte) bool {
@@ -442,15 +533,13 @@ func logHash(id string) string {
 }
 
 func (a *adapter) handleMessage(msg feishuMsgEvent) {
-	if msg.MsgType != "text" {
-		a.logger.Info("feishu message ignored", "reason", "non_text", "msg_type", msg.MsgType, "chat_type", msg.ChatType, "message", logHash(msg.MessageID))
-		return
-	}
-
-	// 解析文本内容
-	var content textContent
-	if err := json.Unmarshal([]byte(msg.Content), &content); err != nil {
-		a.logger.Warn("feishu message ignored", "reason", "bad_content", "message", logHash(msg.MessageID), "err", err)
+	contentText, mentionCount, reason, ok := decodeIncomingContent(msg.MsgType, msg.Content)
+	if !ok {
+		attrs := []any{"reason", reason, "msg_type", msg.MsgType, "chat_type", msg.ChatType, "message", logHash(msg.MessageID)}
+		if strings.HasPrefix(reason, "post_") || strings.HasSuffix(reason, "_decode_failed") {
+			attrs = append(attrs, "content", truncateContentForLog(msg.Content, 4000))
+		}
+		a.logger.Info("feishu message ignored", attrs...)
 		return
 	}
 
@@ -458,7 +547,7 @@ func (a *adapter) handleMessage(msg feishuMsgEvent) {
 	chatType := bot.ChatDM
 	if msg.ChatType == "group" || msg.ChatType == "topic_group" {
 		chatType = bot.ChatGroup
-		if a.cfg.RequireMention && len(msg.Mentions) == 0 {
+		if a.cfg.RequireMention && len(msg.Mentions) == 0 && mentionCount == 0 {
 			a.logger.Info("feishu message ignored", "reason", "missing_mention", "chat", logHash(msg.ChatID), "message", logHash(msg.MessageID))
 			return
 		}
@@ -470,7 +559,7 @@ func (a *adapter) handleMessage(msg feishuMsgEvent) {
 		ChatID:    msg.ChatID,
 		UserID:    msg.Sender.SenderID.OpenID,
 		UserName:  "",
-		Text:      content.Text,
+		Text:      contentText,
 		MessageID: msg.MessageID,
 	}
 
