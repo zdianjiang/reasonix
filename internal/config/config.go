@@ -14,11 +14,35 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"reasonix/internal/fileutil"
 	"reasonix/internal/netclient"
 	"reasonix/internal/provider"
 )
+
+var explicitConfigOverride struct {
+	sync.RWMutex
+	path string
+}
+
+// SetExplicitConfigPath forces runtime config loads to use one specific TOML
+// file and skip user-global config merging until cleared again. An empty path
+// clears the override.
+func SetExplicitConfigPath(path string) {
+	explicitConfigOverride.Lock()
+	explicitConfigOverride.path = strings.TrimSpace(path)
+	explicitConfigOverride.Unlock()
+}
+
+func explicitConfigPath() string {
+	explicitConfigOverride.RLock()
+	defer explicitConfigOverride.RUnlock()
+	return explicitConfigOverride.path
+}
+
+// ExplicitConfigPath returns the active process-level --config override, if any.
+func ExplicitConfigPath() string { return explicitConfigPath() }
 
 var validSkillName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
@@ -511,24 +535,32 @@ type StatuslineConfig struct {
 
 // BotConfig 控制多渠道 IM bot 消息网关。
 type BotConfig struct {
-	Enabled            bool                  `toml:"enabled"`
-	Model              string                `toml:"model"` // 用于 bot 的模型名，空则用 default_model
-	ToolApprovalMode   string                `toml:"tool_approval_mode"`
-	MaxSteps           int                   `toml:"max_steps"`
-	DebounceMs         int                   `toml:"debounce_ms"` // 消息合并窗口，毫秒
-	QueueMode          string                `toml:"queue_mode"`  // steer|followup|collect|interrupt
-	QueueCap           int                   `toml:"queue_cap"`
-	QueueDrop          string                `toml:"queue_drop"` // summarize|old|new
-	IgnoreSelfMessages bool                  `toml:"ignore_self_messages"`
-	SelfUserIDs        BotSelfUserIDs        `toml:"self_user_ids"`
-	Control            BotControlConfig      `toml:"control"`
-	Pairing            BotPairingConfig      `toml:"pairing"`
-	Allowlist          BotAllowlist          `toml:"allowlist"`
-	QQ                 QQBotConfig           `toml:"qq"`
-	Feishu             FeishuBotConfig       `toml:"feishu"`
-	Weixin             WeixinBotConfig       `toml:"weixin"`
-	Routes             []BotRouteConfig      `toml:"routes"`
-	Connections        []BotConnectionConfig `toml:"connections"`
+	Enabled            bool                   `toml:"enabled"`
+	Model              string                 `toml:"model"` // 用于 bot 的模型名，空则用 default_model
+	ToolApprovalMode   string                 `toml:"tool_approval_mode"`
+	MaxSteps           int                    `toml:"max_steps"`
+	DebounceMs         int                    `toml:"debounce_ms"` // 消息合并窗口，毫秒
+	QueueMode          string                 `toml:"queue_mode"`  // steer|followup|collect|interrupt
+	QueueCap           int                    `toml:"queue_cap"`
+	QueueDrop          string                 `toml:"queue_drop"` // summarize|old|new
+	IgnoreSelfMessages bool                   `toml:"ignore_self_messages"`
+	SelfUserIDs        BotSelfUserIDs         `toml:"self_user_ids"`
+	Control            BotControlConfig       `toml:"control"`
+	Pairing            BotPairingConfig       `toml:"pairing"`
+	Observability      BotObservabilityConfig `toml:"observability"`
+	Allowlist          BotAllowlist           `toml:"allowlist"`
+	QQ                 QQBotConfig            `toml:"qq"`
+	Feishu             FeishuBotConfig        `toml:"feishu"`
+	Weixin             WeixinBotConfig        `toml:"weixin"`
+	Routes             []BotRouteConfig       `toml:"routes"`
+	Connections        []BotConnectionConfig  `toml:"connections"`
+}
+
+type BotObservabilityConfig struct {
+	Reasoning    string `toml:"reasoning"`     // off|im|log|both
+	ToolDispatch string `toml:"tool_dispatch"` // off|im|log|both
+	ToolProgress string `toml:"tool_progress"` // off|im|log|both
+	ToolResult   string `toml:"tool_result"`   // off|im|log|both
 }
 
 type BotSelfUserIDs struct {
@@ -1567,10 +1599,16 @@ func Default() *Config {
 			IgnoreSelfMessages: true,
 			Control:            BotControlConfig{Addr: "127.0.0.1:37913", TokenEnv: "REASONIX_BOT_CONTROL_TOKEN"},
 			Pairing:            BotPairingConfig{Enabled: true, RequestTTLMinutes: 60, MaxPendingPerPlatform: 3},
-			Allowlist:          BotAllowlist{Enabled: true},
-			QQ:                 QQBotConfig{AppSecretEnv: "QQ_BOT_APP_SECRET"},
-			Feishu:             FeishuBotConfig{Domain: "feishu", AppSecretEnv: "FEISHU_BOT_APP_SECRET", Mode: "webhook", WebhookPort: 8080, RequireMention: true},
-			Weixin:             WeixinBotConfig{AccountID: "default", TokenEnv: "WEIXIN_BOT_TOKEN", APIBase: "https://ilinkai.weixin.qq.com"},
+			Observability: BotObservabilityConfig{
+				Reasoning:    "off",
+				ToolDispatch: "im",
+				ToolProgress: "off",
+				ToolResult:   "off",
+			},
+			Allowlist: BotAllowlist{Enabled: true},
+			QQ:        QQBotConfig{AppSecretEnv: "QQ_BOT_APP_SECRET"},
+			Feishu:    FeishuBotConfig{Domain: "feishu", AppSecretEnv: "FEISHU_BOT_APP_SECRET", Mode: "webhook", WebhookPort: 8080, RequireMention: true},
+			Weixin:    WeixinBotConfig{AccountID: "default", TokenEnv: "WEIXIN_BOT_TOKEN", APIBase: "https://ilinkai.weixin.qq.com"},
 		},
 		Providers: []ProviderEntry{
 			{Name: "deepseek-flash", Kind: "openai", BaseURL: "https://api.deepseek.com", Model: "deepseek-v4-flash", APIKeyEnv: "DEEPSEEK_API_KEY", BalanceURL: "https://api.deepseek.com/user/balance", ContextWindow: 1_000_000, Price: deepSeekV4FlashPrice()},

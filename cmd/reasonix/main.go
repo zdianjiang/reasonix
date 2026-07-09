@@ -13,7 +13,7 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=...".
-var version = "dev"
+var version = "dev-postdebug"
 
 func main() {
 	os.Exit(cli.Run(os.Args[1:], version))

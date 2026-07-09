@@ -37,6 +37,7 @@ type GatewayConfig struct {
 	ControlEnabled     bool
 	ControlAddr        string
 	ControlToken       string
+	Observability      config.BotObservabilityConfig
 	// ApprovalTimeout bounds how long a tool-approval/ask prompt blocks a bot
 	// session waiting for a remote user's reply. Zero falls back to
 	// defaultBotApprovalTimeout so an abandoned prompt can't wedge the bot forever
@@ -541,7 +542,8 @@ func (gw *BotGateway) dispatchLoop(ctx context.Context, binding AdapterBinding) 
 				return
 			}
 			gw.markAdapterMessage(binding)
-			gw.handleMessage(ctx, binding, msg)
+			gw.logger.Info("bot dispatch received", "platform", binding.Platform, "connection", binding.ID, "domain", binding.Domain, "chat_type", msg.ChatType, "chat", hashID(msg.ChatID), "user", hashID(msg.UserID), "operator", hashID(msg.OperatorID), "message", hashID(msg.MessageID), "text_chars", len([]rune(msg.Text)))
+			go gw.handleMessage(ctx, binding, msg)
 		}
 	}
 }
@@ -1213,7 +1215,9 @@ func (gw *BotGateway) handleSlashCommand(ctx context.Context, adapter Adapter, k
 			return
 		}
 		answers := parseAskAnswers(questions, rawAnswer)
+		gw.logger.Info("bot ask answer received", "session", key[:8], "platform", msg.Platform, "chat_type", msg.ChatType, "chat", hashID(msg.ChatID), "ask_id", askID, "operator", hashID(firstNonEmpty(msg.OperatorID, msg.UserID)), "answer_count", len(answers))
 		state.ctrl.AnswerQuestion(askID, answers)
+		gw.logger.Info("bot ask answer forwarded", "session", key[:8], "ask_id", askID)
 		_ = gw.sendText(ctx, adapter, msg, "已提交回答。")
 
 	case strings.HasPrefix(msg.Text, "/yolo") || strings.HasPrefix(msg.Text, "/mode"):
@@ -1709,6 +1713,7 @@ func (gw *BotGateway) runTurn(ctx context.Context, adapter Adapter, key string, 
 		msg.UserID,
 		msg.MessageID,
 		gw.logger,
+		botObservabilityConfig(gw.cfg),
 		func(approval event.Approval) {
 			gw.mu.Lock()
 			if state.pendingApprovals == nil {
@@ -2011,6 +2016,30 @@ func botSessionTarget(sessionPath string) string {
 	return "path:" + sessionPath
 }
 
+func botObservabilityConfig(cfg GatewayConfig) renderObservability {
+	return renderObservability{
+		Reasoning:    parseRenderRoute(cfg.Observability.Reasoning),
+		ToolDispatch: parseRenderRoute(cfg.Observability.ToolDispatch),
+		ToolProgress: parseRenderRoute(cfg.Observability.ToolProgress),
+		ToolResult:   parseRenderRoute(cfg.Observability.ToolResult),
+	}
+}
+
+func parseRenderRoute(raw string) renderRoute {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "off", "none":
+		return renderRouteNone
+	case "im", "chat", "message":
+		return renderRouteIM
+	case "log", "logs", "stderr":
+		return renderRouteLog
+	case "both", "all":
+		return renderRouteIM | renderRouteLog
+	default:
+		return renderRouteNone
+	}
+}
+
 func (gw *BotGateway) sessionOptionsForMessage(msg InboundMessage) (model string, workspaceRoot string, toolApprovalMode string) {
 	// cfg.ToolApprovalMode / Channels / ConnectionChannels are rewritten under
 	// gw.mu at runtime (/yolo, UpdateConnectionToolApprovalMode), so snapshot them
@@ -2153,6 +2182,15 @@ func routeMatchesMessage(route RouteConfig, msg InboundMessage) bool {
 		return false
 	}
 	return true
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func normalizeBotToolApprovalMode(mode string) string {
