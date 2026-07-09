@@ -34,15 +34,20 @@ func LoadForRoot(root string) (*Config, error) {
 	cfg.CredentialsStore = credentialsStoreMode()
 
 	projectTOML := "reasonix.toml"
-	if root != "." {
+	explicitPath := explicitConfigPath()
+	if explicitPath != "" {
+		projectTOML = explicitPath
+	} else if root != "." {
 		projectTOML = filepath.Join(root, "reasonix.toml")
 	}
 
 	var tomlSources []string
-	if uc := userConfigLoadPath(); uc != "" {
-		tomlSources = append(tomlSources, uc)
-		if err := mergeRuntimeTOMLFile(cfg, uc); err != nil {
-			return nil, err
+	if explicitPath == "" {
+		if uc := userConfigLoadPath(); uc != "" {
+			tomlSources = append(tomlSources, uc)
+			if err := mergeRuntimeTOMLFile(cfg, uc); err != nil {
+				return nil, err
+			}
 		}
 	}
 	globalMaxSteps := cfg.Agent.MaxSteps
@@ -152,8 +157,12 @@ func cloneStringMap(in map[string]string) map[string]string {
 
 func userAutoPlanMode() string {
 	cfg := Default()
-	if uc := userConfigLoadPath(); uc != "" {
-		_ = mergeFile(cfg, uc)
+	if explicitConfigPath() == "" {
+		if uc := userConfigLoadPath(); uc != "" {
+			_ = mergeFile(cfg, uc)
+		}
+	} else {
+		_ = mergeFile(cfg, explicitConfigPath())
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Agent.AutoPlan)) {
 	case "on", "ask":
@@ -244,6 +253,9 @@ func officialProviderKind(p *ProviderEntry) string {
 }
 
 func resolveRoot(root string) string {
+	if path := explicitConfigPath(); path != "" && (root == "" || root == ".") {
+		return filepath.Dir(path)
+	}
 	if root == "" || root == "." {
 		return "."
 	}

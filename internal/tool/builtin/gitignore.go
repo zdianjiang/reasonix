@@ -240,7 +240,12 @@ func findRepoRoot(start string) string {
 	if fi, err := os.Stat(abs); err == nil && !fi.IsDir() {
 		abs = filepath.Dir(abs)
 	}
+	startDir := abs
+	stop := absClean(os.TempDir())
 	for {
+		if abs == stop && abs != startDir {
+			return ""
+		}
 		if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
 			return abs
 		}

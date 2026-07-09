@@ -23,6 +23,9 @@ var (
 )
 
 func userConfigPath() string {
+	if path := explicitConfigPath(); path != "" {
+		return path
+	}
 	dir := userConfigDir()
 	if dir == "" {
 		return ""

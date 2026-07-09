@@ -1440,7 +1440,12 @@ func nearestGitRoot(start string) (string, bool) {
 	if err != nil {
 		dir = filepath.Clean(start)
 	}
+	startDir := dir
+	stop := filepath.Clean(os.TempDir())
 	for {
+		if dir == stop && dir != startDir {
+			return "", false
+		}
 		if isGitMarker(filepath.Join(dir, ".git")) {
 			return dir, true
 		}
