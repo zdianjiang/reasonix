@@ -673,7 +673,7 @@ func (gw *BotGateway) queueMode(key string, msg InboundMessage) string {
 
 func (gw *BotGateway) steerActiveSession(ctx context.Context, adapter Adapter, key string, msg InboundMessage) bool {
 	text := strings.TrimSpace(msg.Text)
-	if text == "" && len(msg.MediaURLs) == 0 {
+	if text == "" && len(msg.MediaURLs) == 0 && len(msg.Media) == 0 {
 		return false
 	}
 	gw.mu.Lock()
@@ -1711,6 +1711,7 @@ func (gw *BotGateway) runTurn(ctx context.Context, adapter Adapter, key string, 
 		msg.ChatID,
 		msg.ChatType,
 		msg.UserID,
+		state.workspaceRoot,
 		msg.MessageID,
 		gw.logger,
 		botObservabilityConfig(gw.cfg),
@@ -1760,7 +1761,7 @@ func (gw *BotGateway) runTurn(ctx context.Context, adapter Adapter, key string, 
 
 func (gw *BotGateway) inputTextWithMedia(ctx context.Context, adapter Adapter, msg InboundMessage, state *sessionState) string {
 	input := msg.Text
-	if len(msg.MediaURLs) == 0 {
+	if len(msg.MediaURLs) == 0 && len(msg.Media) == 0 {
 		return input
 	}
 	workspaceRoot := ""
@@ -1771,6 +1772,9 @@ func (gw *BotGateway) inputTextWithMedia(ctx context.Context, adapter Adapter, m
 		_, workspaceRoot, _ = gw.sessionOptionsForMessage(msg)
 	}
 	refs, errs := saveInboundMedia(ctx, workspaceRoot, msg.MediaURLs)
+	blobRefs, blobErrs := saveInboundMediaBlobs(workspaceRoot, msg.Media)
+	refs = append(refs, blobRefs...)
+	errs = append(errs, blobErrs...)
 	if len(errs) > 0 {
 		gw.logger.Warn("bot media attachment failed", "platform", msg.Platform, "chat", hashID(msg.ChatID), "errors", len(errs))
 		_ = gw.sendText(ctx, adapter, msg, fmt.Sprintf("有 %d 个附件保存失败；我会先处理可用内容。", len(errs)))
@@ -2219,6 +2223,10 @@ func (gw *BotGateway) sendText(ctx context.Context, adapter Adapter, msg Inbound
 		Domain:       msg.Domain,
 		ChatID:       msg.ChatID,
 		ChatType:     msg.ChatType,
+		WorkspaceRoot: func() string {
+			_, root, _ := gw.sessionOptionsForMessage(msg)
+			return root
+		}(),
 		Text:         text,
 		ReplyToMsgID: msg.MessageID,
 	}

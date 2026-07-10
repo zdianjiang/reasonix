@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"reasonix/internal/config"
 
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 func TestStartReturnsMissingWebSocketSecret(t *testing.T) {
@@ -298,6 +301,39 @@ func TestHandleMessageTreatsTopicGroupAsGroup(t *testing.T) {
 	}
 }
 
+func TestHandleMessageAcceptsFileMessage(t *testing.T) {
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		msgCh:  make(chan bot.InboundMessage, 1),
+		download: func(_ context.Context, messageID, fileKey, resourceType string) (bot.InboundMedia, error) {
+			if messageID != "msg-file" || fileKey != "file_123" || resourceType != "file" {
+				t.Fatalf("download args = %q %q %q", messageID, fileKey, resourceType)
+			}
+			return bot.InboundMedia{Name: "spec.pdf", ContentType: "application/pdf", Data: []byte("%PDF")}, nil
+		},
+	}
+	a.handleMessage(feishuMsgEvent{
+		MessageID: "msg-file",
+		ChatID:    "chat-file",
+		ChatType:  "p2p",
+		MsgType:   "file",
+		Content:   `{"file_key":"file_123","file_name":"spec.pdf"}`,
+		Sender: feishuSender{SenderID: struct {
+			UserID  string `json:"user_id"`
+			OpenID  string `json:"open_id"`
+			UnionID string `json:"union_id"`
+		}{OpenID: "open-user"}},
+	})
+
+	msg := <-a.msgCh
+	if msg.Text != "" {
+		t.Fatalf("text = %q, want empty text for pure file message", msg.Text)
+	}
+	if len(msg.Media) != 1 || msg.Media[0].Name != "spec.pdf" {
+		t.Fatalf("media = %#v, want one downloaded file attachment", msg.Media)
+	}
+}
+
 func TestHandleMessageRequiresMentionInTopicGroup(t *testing.T) {
 	a := &adapter{
 		cfg:    config.FeishuBotConfig{RequireMention: true},
@@ -416,5 +452,81 @@ func TestBuildMarkdownCard(t *testing.T) {
 	}
 	if payload.Body.Elements[0].Content != "hello [docs](https://example.com)" {
 		t.Fatalf("content = %q, want original markdown", payload.Body.Elements[0].Content)
+	}
+}
+
+func TestSendMessageUploadsAttachmentRefs(t *testing.T) {
+	workspace := t.TempDir()
+	attachmentsDir := filepath.Join(workspace, ".reasonix", "attachments")
+	if err := os.MkdirAll(attachmentsDir, 0o755); err != nil {
+		t.Fatalf("mkdir attachments: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(attachmentsDir, "report.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(attachmentsDir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
+		t.Fatalf("write shot: %v", err)
+	}
+	var types []string
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sendContent: func(_ context.Context, _ bot.OutboundMessage, msgType, content string) (bot.SendResult, error) {
+			types = append(types, msgType+":"+content)
+			return bot.SendResult{MessageID: fmt.Sprintf("m%d", len(types))}, nil
+		},
+		uploadFile: func(_ context.Context, name string, raw []byte) (string, error) {
+			if name != "report.txt" || string(raw) != "hello" {
+				t.Fatalf("uploadFile got %q %q", name, string(raw))
+			}
+			return "file_key_1", nil
+		},
+		uploadImage: func(_ context.Context, raw []byte) (string, error) {
+			if len(raw) == 0 || raw[1] != 'P' {
+				t.Fatalf("uploadImage got %v", raw)
+			}
+			return "img_key_1", nil
+		},
+	}
+
+	_, err := a.sendMessage(context.Background(), bot.OutboundMessage{
+		ChatID:        "chat-1",
+		WorkspaceRoot: workspace,
+		Text:          "结果如下\n@.reasonix/attachments/report.txt\n@.reasonix/attachments/shot.png",
+	})
+	if err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+	if len(types) != 3 {
+		t.Fatalf("send types = %#v, want text+file+image", types)
+	}
+	if !strings.HasPrefix(types[0], "post:") && !strings.HasPrefix(types[0], "interactive:") && !strings.HasPrefix(types[0], "text:") {
+		t.Fatalf("first send = %q, want text-like message", types[0])
+	}
+	if !strings.HasPrefix(types[1], "file:") || !strings.Contains(types[1], "file_key_1") {
+		t.Fatalf("second send = %q, want file message", types[1])
+	}
+	if !strings.HasPrefix(types[2], "image:") || !strings.Contains(types[2], "img_key_1") {
+		t.Fatalf("third send = %q, want image message", types[2])
+	}
+}
+
+func TestSendTextContentUsesPostForPlainMultilineText(t *testing.T) {
+	var gotType string
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sendContent: func(_ context.Context, _ bot.OutboundMessage, msgType, content string) (bot.SendResult, error) {
+			gotType = msgType
+			if !strings.Contains(content, `"zh_cn"`) {
+				t.Fatalf("content = %q, want post json", content)
+			}
+			return bot.SendResult{MessageID: "m1"}, nil
+		},
+	}
+	_, err := a.sendTextContent(context.Background(), bot.OutboundMessage{ChatID: "chat-1"}, "第一行\n第二行")
+	if err != nil {
+		t.Fatalf("sendTextContent: %v", err)
+	}
+	if gotType != larkim.MsgTypePost {
+		t.Fatalf("msgType = %q, want post", gotType)
 	}
 }

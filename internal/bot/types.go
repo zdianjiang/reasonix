@@ -45,12 +45,21 @@ type InboundMessage struct {
 	UserID       string   `json:"user_id"`
 	UserName     string   `json:"user_name"`
 	// OperatorID, when set, is the authenticated actor gated by the allowlist; UserID stays routing-only.
-	OperatorID string   `json:"operator_id,omitempty"`
-	Text       string   `json:"text"`
-	MessageID  string   `json:"message_id"`
-	ThreadID   string   `json:"thread_id,omitempty"`
-	MediaURLs  []string `json:"media_urls,omitempty"`
-	Raw        any      `json:"-"`
+	OperatorID string         `json:"operator_id,omitempty"`
+	Text       string         `json:"text"`
+	MessageID  string         `json:"message_id"`
+	ThreadID   string         `json:"thread_id,omitempty"`
+	MediaURLs  []string       `json:"media_urls,omitempty"`
+	Media      []InboundMedia `json:"media,omitempty"`
+	Raw        any            `json:"-"`
+}
+
+// InboundMedia is a platform-downloaded attachment/image delivered with an
+// inbound message and later persisted into the workspace by the gateway.
+type InboundMedia struct {
+	Name        string `json:"name,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	Data        []byte `json:"-"`
 }
 
 // Session derives the SessionSource from this message.
@@ -68,15 +77,16 @@ func (m InboundMessage) Session() SessionSource {
 
 // OutboundMessage 是发送到平台的消息。
 type OutboundMessage struct {
-	ConnectionID string           `json:"connection_id,omitempty"`
-	Domain       string           `json:"domain,omitempty"`
-	ChatID       string           `json:"chat_id"`
-	ChatType     ChatType         `json:"chat_type,omitempty"`
-	Text         string           `json:"text,omitempty"`
-	MediaURLs    []string         `json:"media_urls,omitempty"`
-	ReplyToMsgID string           `json:"reply_to_msg_id,omitempty"`
-	Keyboard     *InlineKeyboard  `json:"keyboard,omitempty"`
-	Card         *InteractiveCard `json:"card,omitempty"`
+	ConnectionID  string           `json:"connection_id,omitempty"`
+	Domain        string           `json:"domain,omitempty"`
+	ChatID        string           `json:"chat_id"`
+	ChatType      ChatType         `json:"chat_type,omitempty"`
+	WorkspaceRoot string           `json:"workspace_root,omitempty"`
+	Text          string           `json:"text,omitempty"`
+	MediaURLs     []string         `json:"media_urls,omitempty"`
+	ReplyToMsgID  string           `json:"reply_to_msg_id,omitempty"`
+	Keyboard      *InlineKeyboard  `json:"keyboard,omitempty"`
+	Card          *InteractiveCard `json:"card,omitempty"`
 }
 
 // InlineKeyboard 是内联键盘（用于 QQ 审批）。

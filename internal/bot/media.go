@@ -30,6 +30,18 @@ func saveInboundMedia(ctx context.Context, workspaceRoot string, mediaURLs []str
 	return refs, errs
 }
 
+func saveInboundMediaBlobs(workspaceRoot string, media []InboundMedia) (refs []string, errs []error) {
+	for _, item := range media {
+		ref, err := saveOneInboundMediaBlob(workspaceRoot, item)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return refs, errs
+}
+
 func saveOneInboundMedia(ctx context.Context, workspaceRoot, rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
@@ -69,6 +81,25 @@ func saveOneInboundMedia(ctx context.Context, workspaceRoot, rawURL string) (str
 		contentType = http.DetectContentType(raw[:min(len(raw), 512)])
 	}
 	name := mediaFilename(u, contentType)
+	if strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return control.SaveImageBytesInRoot(workspaceRoot, contentType, raw)
+	}
+	return control.SaveAttachmentBytesInRoot(workspaceRoot, name, raw)
+}
+
+func saveOneInboundMediaBlob(workspaceRoot string, media InboundMedia) (string, error) {
+	raw := media.Data
+	if len(raw) == 0 || len(raw) > maxBotMediaBytes {
+		return "", fmt.Errorf("media must be between 1 byte and 25 MB")
+	}
+	contentType := strings.TrimSpace(media.ContentType)
+	if contentType == "" || strings.EqualFold(contentType, "application/octet-stream") {
+		contentType = http.DetectContentType(raw[:min(len(raw), 512)])
+	}
+	name := strings.TrimSpace(media.Name)
+	if name == "" {
+		name = mediaFilename(&url.URL{}, contentType)
+	}
 	if strings.HasPrefix(strings.ToLower(contentType), "image/") {
 		return control.SaveImageBytesInRoot(workspaceRoot, contentType, raw)
 	}

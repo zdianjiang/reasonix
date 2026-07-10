@@ -1225,6 +1225,41 @@ func TestGatewayDefaultQueueSteersMediaOnlyActiveTurn(t *testing.T) {
 	}
 }
 
+func TestGatewayDefaultQueueSteersInboundBlobOnlyActiveTurn(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	gw := NewGateway(GatewayConfig{
+		Allowlist:     AllowlistConfig{AllowAll: true},
+		WorkspaceRoot: t.TempDir(),
+	}, nil, logger)
+	adapter := newFakeAdapter(PlatformFeishu, "fake-feishu")
+	msg := InboundMessage{
+		Platform:     PlatformFeishu,
+		ConnectionID: "feishu-feishu",
+		ChatType:     ChatDM,
+		ChatID:       "chat",
+		UserID:       "user",
+		Media: []InboundMedia{{
+			Name:        "report.txt",
+			ContentType: "text/plain",
+			Data:        []byte("ok"),
+		}},
+		MessageID: "m-media",
+	}
+	key := BuildSessionKey(msg.Session())
+	ctrl := &queueTestController{}
+	gw.controllers[key] = &sessionState{ctrl: ctrl, sink: &sessionEventSink{}}
+	if result := gw.sessions.TryAcquireWithQueue(key, msg, QueueOptions{Mode: QueueModeFollowup}); !result.Acquired {
+		t.Fatalf("failed to mark session active: %+v", result)
+	}
+
+	gw.handleMessage(context.Background(), AdapterBinding{ID: "feishu-feishu", Platform: PlatformFeishu, Adapter: adapter}, msg)
+
+	got := ctrl.steered()
+	if len(got) != 1 || !strings.Contains(got[0], "Attachments:") || !strings.Contains(got[0], "@.reasonix/attachments/") || !strings.Contains(got[0], ".txt") {
+		t.Fatalf("steers = %#v, want saved attachment reference", got)
+	}
+}
+
 func TestGatewayQueueFollowupKeepsMessagesForLaterTurns(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	gw := NewGateway(GatewayConfig{Allowlist: AllowlistConfig{AllowAll: true}}, nil, logger)

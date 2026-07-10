@@ -34,3 +34,22 @@ func TestSaveInboundMediaStoresWorkspaceImageAttachment(t *testing.T) {
 		t.Fatalf("stored attachment missing: %v", err)
 	}
 }
+
+func TestSaveInboundMediaBlobStoresWorkspaceFileAttachment(t *testing.T) {
+	workspace := t.TempDir()
+
+	ref, err := saveOneInboundMediaBlob(workspace, InboundMedia{
+		Name:        "note.txt",
+		ContentType: "text/plain",
+		Data:        []byte("hello"),
+	})
+	if err != nil {
+		t.Fatalf("saveOneInboundMediaBlob: %v", err)
+	}
+	if !strings.HasPrefix(ref, ".reasonix/attachments/") || !strings.HasSuffix(ref, ".txt") {
+		t.Fatalf("ref = %q, want txt attachment ref", ref)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, filepath.FromSlash(ref))); err != nil {
+		t.Fatalf("stored attachment missing: %v", err)
+	}
+}

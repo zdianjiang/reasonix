@@ -13,19 +13,20 @@ import (
 
 // renderSink 将 Reasonix 事件流渲染为平台消息。
 type renderSink struct {
-	ctx        context.Context
-	adapter    Adapter
-	connID     string
-	domain     string
-	chatID     string
-	chatType   ChatType
-	userID     string
-	replyTo    string
-	logger     *slog.Logger
-	ctrl       botController
-	onApproval func(event.Approval)
-	onAsk      func(event.Ask)
-	obs        renderObservability
+	ctx           context.Context
+	adapter       Adapter
+	connID        string
+	domain        string
+	chatID        string
+	chatType      ChatType
+	userID        string
+	workspaceRoot string
+	replyTo       string
+	logger        *slog.Logger
+	ctrl          botController
+	onApproval    func(event.Approval)
+	onAsk         func(event.Ask)
+	obs           renderObservability
 
 	// 渲染缓冲
 	buf           strings.Builder
@@ -63,22 +64,23 @@ const (
 	renderMaxProgressMessages = 3
 )
 
-func newRenderSink(ctx context.Context, adapter Adapter, connID, domain, chatID string, chatType ChatType, userID string, replyTo string, logger *slog.Logger, obs renderObservability, onApproval func(event.Approval), onAsk func(event.Ask)) *renderSink {
+func newRenderSink(ctx context.Context, adapter Adapter, connID, domain, chatID string, chatType ChatType, userID string, workspaceRoot string, replyTo string, logger *slog.Logger, obs renderObservability, onApproval func(event.Approval), onAsk func(event.Ask)) *renderSink {
 	return &renderSink{
-		ctx:        ctx,
-		adapter:    adapter,
-		connID:     connID,
-		domain:     domain,
-		chatID:     chatID,
-		chatType:   chatType,
-		userID:     userID,
-		replyTo:    replyTo,
-		logger:     logger,
-		obs:        obs,
-		onApproval: onApproval,
-		onAsk:      onAsk,
-		toolNames:  make(map[string]string),
-		lastFlush:  time.Now(),
+		ctx:           ctx,
+		adapter:       adapter,
+		connID:        connID,
+		domain:        domain,
+		chatID:        chatID,
+		chatType:      chatType,
+		userID:        userID,
+		workspaceRoot: workspaceRoot,
+		replyTo:       replyTo,
+		logger:        logger,
+		obs:           obs,
+		onApproval:    onApproval,
+		onAsk:         onAsk,
+		toolNames:     make(map[string]string),
+		lastFlush:     time.Now(),
 	}
 }
 
@@ -189,12 +191,13 @@ func (s *renderSink) Emit(e event.Event) {
 		approvalText := fmt.Sprintf("⚠️ 需要批准操作:\n工具: %s\n操作: %s\n\nID: `%s`\n回复 1 批准，回复 2 拒绝；也可用 /approve %s 或 /deny %s。",
 			e.Approval.Tool, e.Approval.Subject, e.Approval.ID, e.Approval.ID, e.Approval.ID)
 		msg := OutboundMessage{
-			ConnectionID: s.connID,
-			Domain:       s.domain,
-			ChatID:       s.chatID,
-			ChatType:     s.chatType,
-			Text:         approvalText,
-			ReplyToMsgID: s.replyTo,
+			ConnectionID:  s.connID,
+			Domain:        s.domain,
+			ChatID:        s.chatID,
+			ChatType:      s.chatType,
+			WorkspaceRoot: s.workspaceRoot,
+			Text:          approvalText,
+			ReplyToMsgID:  s.replyTo,
 		}
 		switch s.adapter.Platform() {
 		case PlatformQQ:
@@ -211,12 +214,13 @@ func (s *renderSink) Emit(e event.Event) {
 		// 发送问答请求
 		askText := renderAskText(e.Ask)
 		msg := OutboundMessage{
-			ConnectionID: s.connID,
-			Domain:       s.domain,
-			ChatID:       s.chatID,
-			ChatType:     s.chatType,
-			Text:         askText,
-			ReplyToMsgID: s.replyTo,
+			ConnectionID:  s.connID,
+			Domain:        s.domain,
+			ChatID:        s.chatID,
+			ChatType:      s.chatType,
+			WorkspaceRoot: s.workspaceRoot,
+			Text:          askText,
+			ReplyToMsgID:  s.replyTo,
 		}
 		if s.adapter.Platform() == PlatformFeishu {
 			msg.Card = askCard(e.Ask, askText, s.chatType, s.userID)
@@ -230,12 +234,13 @@ func (s *renderSink) Emit(e event.Event) {
 		if e.Err != nil {
 			if !strings.Contains(e.Err.Error(), "context canceled") {
 				_ = s.send(OutboundMessage{
-					ConnectionID: s.connID,
-					Domain:       s.domain,
-					ChatID:       s.chatID,
-					ChatType:     s.chatType,
-					Text:         fmt.Sprintf("❌ 执行出错: %v", e.Err),
-					ReplyToMsgID: s.replyTo,
+					ConnectionID:  s.connID,
+					Domain:        s.domain,
+					ChatID:        s.chatID,
+					ChatType:      s.chatType,
+					WorkspaceRoot: s.workspaceRoot,
+					Text:          fmt.Sprintf("❌ 执行出错: %v", e.Err),
+					ReplyToMsgID:  s.replyTo,
 				})
 			}
 		}
@@ -243,23 +248,25 @@ func (s *renderSink) Emit(e event.Event) {
 	case event.Notice:
 		if e.Level == event.LevelWarn {
 			_ = s.send(OutboundMessage{
-				ConnectionID: s.connID,
-				Domain:       s.domain,
-				ChatID:       s.chatID,
-				ChatType:     s.chatType,
-				Text:         fmt.Sprintf("⚠️ %s", e.Text),
-				ReplyToMsgID: s.replyTo,
+				ConnectionID:  s.connID,
+				Domain:        s.domain,
+				ChatID:        s.chatID,
+				ChatType:      s.chatType,
+				WorkspaceRoot: s.workspaceRoot,
+				Text:          fmt.Sprintf("⚠️ %s", e.Text),
+				ReplyToMsgID:  s.replyTo,
 			})
 		}
 
 	case event.CompactionStarted:
 		_ = s.send(OutboundMessage{
-			ConnectionID: s.connID,
-			Domain:       s.domain,
-			ChatID:       s.chatID,
-			ChatType:     s.chatType,
-			Text:         "🔄 正在压缩上下文...",
-			ReplyToMsgID: s.replyTo,
+			ConnectionID:  s.connID,
+			Domain:        s.domain,
+			ChatID:        s.chatID,
+			ChatType:      s.chatType,
+			WorkspaceRoot: s.workspaceRoot,
+			Text:          "🔄 正在压缩上下文...",
+			ReplyToMsgID:  s.replyTo,
 		})
 	}
 }
@@ -293,12 +300,13 @@ func (s *renderSink) flushPrefix(idx int) {
 	remaining := raw[idx:]
 	s.logger.Info("bot final flush chunk", "chat_type", s.chatType, "chat", hashID(s.chatID), "reply_to", hashID(s.replyTo), "chunk_runes", len([]rune(text)), "remaining_runes", len([]rune(strings.TrimSpace(remaining))))
 	_ = s.send(OutboundMessage{
-		ConnectionID: s.connID,
-		Domain:       s.domain,
-		ChatID:       s.chatID,
-		ChatType:     s.chatType,
-		Text:         text,
-		ReplyToMsgID: s.replyTo,
+		ConnectionID:  s.connID,
+		Domain:        s.domain,
+		ChatID:        s.chatID,
+		ChatType:      s.chatType,
+		WorkspaceRoot: s.workspaceRoot,
+		Text:          text,
+		ReplyToMsgID:  s.replyTo,
 	})
 	s.buf.Reset()
 	s.buf.WriteString(remaining)
@@ -318,12 +326,13 @@ func (s *renderSink) sendProgress(text string, force bool) {
 		return
 	}
 	_ = s.send(OutboundMessage{
-		ConnectionID: s.connID,
-		Domain:       s.domain,
-		ChatID:       s.chatID,
-		ChatType:     s.chatType,
-		Text:         text,
-		ReplyToMsgID: s.replyTo,
+		ConnectionID:  s.connID,
+		Domain:        s.domain,
+		ChatID:        s.chatID,
+		ChatType:      s.chatType,
+		WorkspaceRoot: s.workspaceRoot,
+		Text:          text,
+		ReplyToMsgID:  s.replyTo,
 	})
 	s.progressCount++
 	s.lastProgress = now
