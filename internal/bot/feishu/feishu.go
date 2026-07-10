@@ -76,8 +76,8 @@ const feishuPendingReactionEmoji = "OnIt"
 const feishuMaxInboundResourceBytes = 25 * 1024 * 1024
 const feishuDefaultPostTitle = "Reasonix"
 
-var namedAttachmentRefRe = regexp.MustCompile(`@\[([^\]\r\n]+)\]\((\.reasonix/attachments/[^)\s]+)\)`)
-var plainAttachmentRefRe = regexp.MustCompile(`@(\.reasonix/attachments/[^\s]+)`)
+var namedFileRefRe = regexp.MustCompile(`@\[([^\]\r\n]+)\]\(([^)\s]+)\)`)
+var plainFileRefRe = regexp.MustCompile(`@([^\s]+)`)
 
 // feishuEvent 飞书事件结构。
 type feishuEvent struct {
@@ -765,26 +765,36 @@ func extractAttachmentRefs(text string) (string, []string) {
 	seen := map[string]bool{}
 	collect := func(ref string) {
 		ref = strings.TrimSpace(ref)
-		if ref == "" || seen[ref] {
+		ref = strings.TrimRight(ref, ".,;!?)]}")
+		if ref == "" || strings.Contains(ref, "://") || strings.Contains(ref, "@") || seen[ref] {
 			return
 		}
 		seen[ref] = true
 		refs = append(refs, ref)
 	}
-	namedMatches := namedAttachmentRefRe.FindAllStringSubmatch(text, -1)
+	namedMatches := namedFileRefRe.FindAllStringSubmatch(text, -1)
 	for _, m := range namedMatches {
 		if len(m) > 2 {
 			collect(m[2])
 		}
 	}
-	plainMatches := plainAttachmentRefRe.FindAllStringSubmatch(text, -1)
+	plainMatches := plainFileRefRe.FindAllStringSubmatch(text, -1)
 	for _, m := range plainMatches {
 		if len(m) > 1 {
 			collect(m[1])
 		}
 	}
-	cleaned := namedAttachmentRefRe.ReplaceAllString(text, "")
-	cleaned = plainAttachmentRefRe.ReplaceAllString(cleaned, "")
+	cleaned := namedFileRefRe.ReplaceAllString(text, "")
+	cleaned = plainFileRefRe.ReplaceAllStringFunc(cleaned, func(match string) string {
+		if len(match) <= 1 {
+			return match
+		}
+		ref := strings.TrimRight(match[1:], ".,;!?)]}")
+		if ref == "" || strings.Contains(ref, "://") || strings.Contains(ref, "@") {
+			return match
+		}
+		return ""
+	})
 	lines := strings.Split(strings.ReplaceAll(cleaned, "\r\n", "\n"), "\n")
 	compacted := make([]string, 0, len(lines))
 	prevBlank := false
@@ -950,7 +960,7 @@ func (a *adapter) sendSDKContent(ctx context.Context, msg bot.OutboundMessage, m
 }
 
 func (a *adapter) sendAttachmentRef(ctx context.Context, msg bot.OutboundMessage, ref string) (bot.SendResult, error) {
-	name, raw, isImage, err := readWorkspaceAttachment(msg.WorkspaceRoot, ref)
+	name, raw, isImage, err := readWorkspaceFileRef(msg.WorkspaceRoot, ref)
 	if err != nil {
 		return bot.SendResult{}, err
 	}
@@ -1075,29 +1085,31 @@ func feishuCodeError(code int, msg string) string {
 	return fmt.Sprintf("%s (code %d)", msg, code)
 }
 
-func readWorkspaceAttachment(workspaceRoot, ref string) (name string, raw []byte, isImage bool, err error) {
-	ref = filepath.ToSlash(strings.TrimSpace(ref))
+func readWorkspaceFileRef(workspaceRoot, ref string) (name string, raw []byte, isImage bool, err error) {
+	ref = strings.TrimSpace(ref)
 	if workspaceRoot == "" {
 		workspaceRoot = "."
-	}
-	if !strings.HasPrefix(ref, ".reasonix/attachments/") {
-		return "", nil, false, fmt.Errorf("attachment path is outside .reasonix/attachments")
-	}
-	cleanRel := filepath.Clean(filepath.FromSlash(ref))
-	if filepath.IsAbs(cleanRel) || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
-		return "", nil, false, fmt.Errorf("attachment path must be relative")
 	}
 	absRoot, err := filepath.Abs(workspaceRoot)
 	if err != nil {
 		return "", nil, false, err
 	}
-	absPath := filepath.Join(absRoot, cleanRel)
-	attachmentRoot := filepath.Join(absRoot, ".reasonix", "attachments")
-	relToRoot, err := filepath.Rel(attachmentRoot, absPath)
-	if err != nil || relToRoot == "." || relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
-		return "", nil, false, fmt.Errorf("attachment path is outside .reasonix/attachments")
+	var absPath string
+	if filepath.IsAbs(ref) {
+		absPath = filepath.Clean(ref)
+	} else {
+		cleanRel := filepath.Clean(filepath.FromSlash(ref))
+		if cleanRel == "." || cleanRel == "" {
+			return "", nil, false, fmt.Errorf("file path is empty")
+		}
+		absPath = filepath.Join(absRoot, cleanRel)
 	}
-	cur := attachmentRoot
+	absPath = filepath.Clean(absPath)
+	relToRoot, err := filepath.Rel(absRoot, absPath)
+	if err != nil || relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+		return "", nil, false, fmt.Errorf("file path is outside workspace")
+	}
+	cur := absRoot
 	for _, part := range strings.Split(relToRoot, string(filepath.Separator)) {
 		if part == "" || part == "." {
 			continue
@@ -1108,15 +1120,18 @@ func readWorkspaceAttachment(workspaceRoot, ref string) (name string, raw []byte
 			return "", nil, false, err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return "", nil, false, fmt.Errorf("attachment path must not contain symlinks")
+			return "", nil, false, fmt.Errorf("file path must not contain symlinks")
 		}
 	}
 	info, err := os.Lstat(absPath)
 	if err != nil {
 		return "", nil, false, err
 	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", nil, false, fmt.Errorf("file path must not be a symlink")
+	}
 	if info.IsDir() || info.Size() <= 0 || info.Size() > feishuMaxInboundResourceBytes {
-		return "", nil, false, fmt.Errorf("attachment must be between 1 byte and 25 MB")
+		return "", nil, false, fmt.Errorf("file must be between 1 byte and 25 MB")
 	}
 	f, err := os.Open(absPath)
 	if err != nil {
@@ -1128,14 +1143,14 @@ func readWorkspaceAttachment(workspaceRoot, ref string) (name string, raw []byte
 		return "", nil, false, err
 	}
 	if len(raw) == 0 || len(raw) > feishuMaxInboundResourceBytes {
-		return "", nil, false, fmt.Errorf("attachment must be between 1 byte and 25 MB")
+		return "", nil, false, fmt.Errorf("file must be between 1 byte and 25 MB")
 	}
-	ext := strings.ToLower(filepath.Ext(cleanRel))
+	ext := strings.ToLower(filepath.Ext(absPath))
 	switch ext {
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".ico":
 		isImage = true
 	}
-	return filepath.Base(cleanRel), raw, isImage, nil
+	return filepath.Base(absPath), raw, isImage, nil
 }
 
 // runWebhook 启动飞书 Webhook 模式。

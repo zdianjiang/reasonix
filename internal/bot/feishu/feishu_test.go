@@ -457,14 +457,14 @@ func TestBuildMarkdownCard(t *testing.T) {
 
 func TestSendMessageUploadsAttachmentRefs(t *testing.T) {
 	workspace := t.TempDir()
-	attachmentsDir := filepath.Join(workspace, ".reasonix", "attachments")
-	if err := os.MkdirAll(attachmentsDir, 0o755); err != nil {
-		t.Fatalf("mkdir attachments: %v", err)
+	filesDir := filepath.Join(workspace, "erp")
+	if err := os.MkdirAll(filesDir, 0o755); err != nil {
+		t.Fatalf("mkdir files: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(attachmentsDir, "report.txt"), []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(filesDir, "report.txt"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("write report: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(attachmentsDir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(filesDir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
 		t.Fatalf("write shot: %v", err)
 	}
 	var types []string
@@ -491,7 +491,7 @@ func TestSendMessageUploadsAttachmentRefs(t *testing.T) {
 	_, err := a.sendMessage(context.Background(), bot.OutboundMessage{
 		ChatID:        "chat-1",
 		WorkspaceRoot: workspace,
-		Text:          "结果如下\n@.reasonix/attachments/report.txt\n@.reasonix/attachments/shot.png",
+		Text:          "结果如下\n@erp/report.txt\n@erp/shot.png",
 	})
 	if err != nil {
 		t.Fatalf("sendMessage: %v", err)
@@ -507,6 +507,28 @@ func TestSendMessageUploadsAttachmentRefs(t *testing.T) {
 	}
 	if !strings.HasPrefix(types[2], "image:") || !strings.Contains(types[2], "img_key_1") {
 		t.Fatalf("third send = %q, want image message", types[2])
+	}
+}
+
+func TestSendMessageRejectsOutsideWorkspaceRef(t *testing.T) {
+	workspace := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("nope"), 0o644); err != nil {
+		t.Fatalf("write outside: %v", err)
+	}
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sendContent: func(_ context.Context, _ bot.OutboundMessage, _, _ string) (bot.SendResult, error) {
+			return bot.SendResult{}, nil
+		},
+	}
+	_, err := a.sendMessage(context.Background(), bot.OutboundMessage{
+		ChatID:        "chat-1",
+		WorkspaceRoot: workspace,
+		Text:          "@" + outside,
+	})
+	if err == nil || !strings.Contains(err.Error(), "outside workspace") {
+		t.Fatalf("err = %v, want outside workspace", err)
 	}
 }
 
