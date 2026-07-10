@@ -110,6 +110,19 @@ func (s *renderSink) Emit(e event.Event) {
 	case event.Message:
 		// full message received, do nothing extra
 
+	case event.ReplyAttachmentEvent:
+		s.flush()
+		if e.Attachment != nil {
+			_ = s.sendReplyPayload(ReplyPayload{Segments: []ReplySegment{{
+				Attachment: &OutboundAttachment{
+					Kind:        strings.TrimSpace(e.Attachment.Kind),
+					Path:        strings.TrimSpace(e.Attachment.Path),
+					Name:        strings.TrimSpace(e.Attachment.Name),
+					ContentType: strings.TrimSpace(e.Attachment.ContentType),
+				},
+			}}})
+		}
+
 	case event.ToolDispatch:
 		name := renderToolName(e.Tool)
 		s.toolNames[e.Tool.ID] = name
@@ -184,6 +197,7 @@ func (s *renderSink) Emit(e event.Event) {
 		}
 
 	case event.ApprovalRequest:
+		s.flush()
 		// 发送审批请求
 		if s.onApproval != nil {
 			s.onApproval(e.Approval)
@@ -208,6 +222,7 @@ func (s *renderSink) Emit(e event.Event) {
 		_ = s.send(msg)
 
 	case event.AskRequest:
+		s.flush()
 		if s.onAsk != nil {
 			s.onAsk(e.Ask)
 		}
@@ -247,6 +262,7 @@ func (s *renderSink) Emit(e event.Event) {
 
 	case event.Notice:
 		if e.Level == event.LevelWarn {
+			s.flush()
 			_ = s.send(OutboundMessage{
 				ConnectionID:  s.connID,
 				Domain:        s.domain,
@@ -259,6 +275,7 @@ func (s *renderSink) Emit(e event.Event) {
 		}
 
 	case event.CompactionStarted:
+		s.flush()
 		_ = s.send(OutboundMessage{
 			ConnectionID:  s.connID,
 			Domain:        s.domain,
@@ -299,15 +316,7 @@ func (s *renderSink) flushPrefix(idx int) {
 	}
 	remaining := raw[idx:]
 	s.logger.Info("bot final flush chunk", "chat_type", s.chatType, "chat", hashID(s.chatID), "reply_to", hashID(s.replyTo), "chunk_runes", len([]rune(text)), "remaining_runes", len([]rune(strings.TrimSpace(remaining))))
-	_ = s.send(OutboundMessage{
-		ConnectionID:  s.connID,
-		Domain:        s.domain,
-		ChatID:        s.chatID,
-		ChatType:      s.chatType,
-		WorkspaceRoot: s.workspaceRoot,
-		Text:          text,
-		ReplyToMsgID:  s.replyTo,
-	})
+	_ = s.sendReplyPayload(ReplyPayload{Segments: []ReplySegment{{Text: text}}})
 	s.buf.Reset()
 	s.buf.WriteString(remaining)
 	s.lastFlush = time.Now()
@@ -457,6 +466,28 @@ func byteIndexForRuneLimit(text string, maxRunes int) int {
 func (s *renderSink) send(msg OutboundMessage) error {
 	_, err := s.adapter.Send(s.ctx, msg)
 	return err
+}
+
+func (s *renderSink) sendReplyPayload(payload ReplyPayload) error {
+	for _, seg := range payload.Segments {
+		msg := OutboundMessage{
+			ConnectionID:  s.connID,
+			Domain:        s.domain,
+			ChatID:        s.chatID,
+			ChatType:      s.chatType,
+			WorkspaceRoot: s.workspaceRoot,
+			ReplyToMsgID:  s.replyTo,
+			Text:          strings.TrimSpace(seg.Text),
+			Attachment:    seg.Attachment,
+		}
+		if msg.Text == "" && msg.Attachment == nil {
+			continue
+		}
+		if err := s.send(msg); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func approvalKeyboard(id string) *InlineKeyboard {

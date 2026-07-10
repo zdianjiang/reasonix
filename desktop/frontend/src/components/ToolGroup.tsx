@@ -11,7 +11,7 @@ export type ToolGroupKind = "explore" | "modify" | "delegate" | "shell";
 
 const SHELL_TOOLS = new Set(["bash", "bash_output", "wait", "waitJob", "kill_shell"]);
 const EXPLORE_TOOLS = new Set(["read_file", "ls", "grep", "glob", "web_fetch", "code_index", "read_skill", "connect_tool_source"]);
-const MODIFY_TOOLS = new Set(["write_file", "edit_file", "multi_edit", "move_file", "delete_range", "delete_symbol", "notebook_edit"]);
+const MODIFY_TOOLS = new Set(["write_file", "edit_file", "multi_edit", "move_file", "delete_range", "delete_symbol", "notebook_edit", "message_send_file", "message_send_image"]);
 const DELEGATE_TOOLS = new Set(["task", "run_skill", "explore", "research", "review", "security_review"]);
 
 export function toolGroupKind(item: ToolItem): ToolGroupKind | null {
@@ -54,11 +54,13 @@ function groupSummary(kind: ToolGroupKind, items: ToolItem[], t: ReturnType<type
     const editCount = count(items, ["edit_file", "multi_edit", "notebook_edit"]);
     const moveCount = count(items, ["move_file"]);
     const deleteCount = count(items, ["delete_range", "delete_symbol"]);
-    const otherCount = items.length - writeCount - editCount - moveCount - deleteCount;
+    const sendCount = count(items, ["message_send_file", "message_send_image"]);
+    const otherCount = items.length - writeCount - editCount - moveCount - deleteCount - sendCount;
     if (writeCount > 0) parts.push(t("creation.toolStat.write", { n: writeCount }));
     if (editCount > 0) parts.push(t("creation.toolStat.edit", { n: editCount }));
     if (moveCount > 0) parts.push(t("creation.toolStat.move", { n: moveCount }));
     if (deleteCount > 0) parts.push(t("creation.toolStat.delete", { n: deleteCount }));
+    if (sendCount > 0) parts.push(t("creation.toolStat.other", { n: sendCount }));
     if (otherCount > 0) parts.push(t("creation.toolStat.other", { n: otherCount }));
   } else if (kind === "delegate") {
     const taskCount = count(items, ["task", "run_skill", "explore", "research", "review", "security_review"]);
@@ -97,6 +99,8 @@ function toolDisplayName(name: string): string {
     case "edit_file": return "Edit";
     case "multi_edit": return "Multi Edit";
     case "move_file": return "Move";
+    case "message_send_file": return "Send File";
+    case "message_send_image": return "Send Image";
     case "bash": return "Shell";
     case "bash_output": return "Shell Output";
     case "kill_shell": return "Kill Shell";

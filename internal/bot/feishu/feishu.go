@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -75,9 +74,6 @@ type decodedIncomingContent struct {
 const feishuPendingReactionEmoji = "OnIt"
 const feishuMaxInboundResourceBytes = 25 * 1024 * 1024
 const feishuDefaultPostTitle = "Reasonix"
-
-var namedFileRefRe = regexp.MustCompile(`@\[([^\]\r\n]+)\]\(([^)\s]+)\)`)
-var plainFileRefRe = regexp.MustCompile(`@([^\s]+)`)
 
 // feishuEvent 飞书事件结构。
 type feishuEvent struct {
@@ -650,25 +646,21 @@ func (a *adapter) sendMessage(ctx context.Context, msg bot.OutboundMessage) (bot
 	if msg.Card != nil {
 		return a.sendCard(ctx, msg)
 	}
-	text, refs := extractAttachmentRefs(msg.Text)
-	var last bot.SendResult
-	var err error
-	if strings.TrimSpace(text) != "" {
-		last, err = a.sendTextContent(ctx, msg, text)
-		if err != nil {
-			return last, err
-		}
+	if msg.Attachment != nil {
+		return a.sendStructuredAttachment(ctx, msg, msg.Attachment)
 	}
-	for _, ref := range refs {
-		last, err = a.sendAttachmentRef(ctx, msg, ref)
-		if err != nil {
-			return last, err
-		}
+	return a.sendTextContent(ctx, msg, msg.Text)
+}
+
+func (a *adapter) sendStructuredAttachment(ctx context.Context, msg bot.OutboundMessage, att *bot.OutboundAttachment) (bot.SendResult, error) {
+	if att == nil {
+		return bot.SendResult{}, fmt.Errorf("feishu attachment is nil")
 	}
-	if strings.TrimSpace(text) == "" && len(refs) == 0 {
-		return a.sendTextContent(ctx, msg, "")
+	ref := strings.TrimSpace(att.Path)
+	if ref == "" {
+		return bot.SendResult{}, fmt.Errorf("feishu attachment path is empty")
 	}
-	return last, nil
+	return a.sendAttachmentRef(ctx, msg, ref)
 }
 
 func (a *adapter) sendTextContent(ctx context.Context, msg bot.OutboundMessage, text string) (bot.SendResult, error) {
@@ -758,61 +750,6 @@ func shouldUseFeishuPost(text string) bool {
 		}
 	}
 	return strings.Contains(text, "\n")
-}
-
-func extractAttachmentRefs(text string) (string, []string) {
-	refs := make([]string, 0, 4)
-	seen := map[string]bool{}
-	collect := func(ref string) {
-		ref = strings.TrimSpace(ref)
-		ref = strings.TrimRight(ref, ".,;!?)]}")
-		if ref == "" || strings.Contains(ref, "://") || strings.Contains(ref, "@") || seen[ref] {
-			return
-		}
-		seen[ref] = true
-		refs = append(refs, ref)
-	}
-	namedMatches := namedFileRefRe.FindAllStringSubmatch(text, -1)
-	for _, m := range namedMatches {
-		if len(m) > 2 {
-			collect(m[2])
-		}
-	}
-	plainMatches := plainFileRefRe.FindAllStringSubmatch(text, -1)
-	for _, m := range plainMatches {
-		if len(m) > 1 {
-			collect(m[1])
-		}
-	}
-	cleaned := namedFileRefRe.ReplaceAllString(text, "")
-	cleaned = plainFileRefRe.ReplaceAllStringFunc(cleaned, func(match string) string {
-		if len(match) <= 1 {
-			return match
-		}
-		ref := strings.TrimRight(match[1:], ".,;!?)]}")
-		if ref == "" || strings.Contains(ref, "://") || strings.Contains(ref, "@") {
-			return match
-		}
-		return ""
-	})
-	lines := strings.Split(strings.ReplaceAll(cleaned, "\r\n", "\n"), "\n")
-	compacted := make([]string, 0, len(lines))
-	prevBlank := false
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			if prevBlank {
-				continue
-			}
-			prevBlank = true
-			compacted = append(compacted, "")
-			continue
-		}
-		prevBlank = false
-		compacted = append(compacted, line)
-	}
-	cleaned = strings.TrimSpace(strings.Join(compacted, "\n"))
-	return cleaned, refs
 }
 
 func (a *adapter) sdkClient() (*lark.Client, error) {

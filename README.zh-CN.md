@@ -118,7 +118,8 @@ provider key 的运行时 fallback，但仍会作为当前 workspace 范围内�
 - **[指南](./docs/GUIDE.zh-CN.md)** —— 配置、权限与沙盒、插件(MCP)、斜杠命令、
   `@` 引用、双模型协同。
 - **[机器人使用指南](./docs/BOT_GUIDE.zh-CN.md)** —— 桌面端连接飞书、Lark、微信
-  Bot，以及 IM 里的审批、YOLO 和命令交互。
+  Bot，以及 IM 里的审批、YOLO、命令交互和 `message_send_file` /
+  `message_send_image` 媒体发送。
 - **[规格](./docs/SPEC.md)** —— 工程契约:架构、registry、数据类型与路线图。
 - **[任务合约与暂停策略](./docs/TASK_CONTRACT.zh-CN.md)** —— 用背景、输出边界、约束和暂停条件组织复杂请求。
 - **[工具合约](./docs/TOOL_CONTRACT.zh-CN.md)** —— provider 可见的内置工具名、

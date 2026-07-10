@@ -96,6 +96,38 @@ api_key_env = "REASONIX_TEST_KEY_UNSET"
 	}
 }
 
+func TestBuildSystemPromptMentionsSendAttachmentTools(t *testing.T) {
+	dir := robustTempDir(t)
+	t.Chdir(dir)
+
+	writeFile(t, dir, "reasonix.toml", `
+default_model = "test-model"
+
+[agent]
+system_prompt = "BASE SYSTEM PROMPT"
+
+[[providers]]
+name = "test-model"
+kind = "openai"
+base_url = "https://example.invalid"
+model = "x"
+api_key_env = "REASONIX_TEST_KEY_UNSET"
+`)
+
+	ctrl, err := Build(context.Background(), Options{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	defer ctrl.Close()
+
+	sys := systemMessage(ctrl.History())
+	for _, want := range []string{"message_send_file", "message_send_image"} {
+		if !strings.Contains(sys, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, sys)
+		}
+	}
+}
+
 func TestBuildRunsCleanupPendingReconciler(t *testing.T) {
 	isolateConfigHome(t)
 	dir := robustTempDir(t)

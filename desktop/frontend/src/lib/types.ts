@@ -14,6 +14,7 @@ export type EventKind =
   | "phase"
   | "approval_request"
   | "ask_request"
+  | "reply_attachment"
   | "turn_done"
   | "compaction_started"
   | "compaction_done"
@@ -120,6 +121,13 @@ export interface WireAsk {
   questions: WireAskQuestion[];
 }
 
+export interface WireReplyAttachment {
+  kind?: string;
+  path?: string;
+  name?: string;
+  contentType?: string;
+}
+
 // QuestionAnswer is the reply for one question, sent back via AnswerQuestion.
 export interface QuestionAnswer {
   questionId: string;
@@ -164,6 +172,7 @@ export interface WireEvent {
   usage?: WireUsage;
   approval?: WireApproval;
   ask?: WireAsk;
+  attachment?: WireReplyAttachment;
   compaction?: WireCompaction;
   guardian?: WireGuardian;
   err?: string;

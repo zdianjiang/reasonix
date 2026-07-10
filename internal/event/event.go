@@ -54,6 +54,9 @@ const (
 	// questions to the user (Ask: ID + Questions). The run blocks until the
 	// controller's AnswerQuestion(ID, …) resolves it. Powers the `ask` tool.
 	AskRequest
+	// ReplyAttachmentEvent announces that the visible assistant reply includes an
+	// attachment/image the frontend may render or send in-order with text.
+	ReplyAttachmentEvent
 	// TurnDone marks the end of one top-level Run (Err non-nil on failure;
 	// nil also for a user cancellation, which is not an error). Always the
 	// last event of a turn.
@@ -178,6 +181,15 @@ type Ask struct {
 	Questions []AskQuestion
 }
 
+// ReplyAttachment describes one file/image that belongs to the visible
+// assistant reply stream. It is content, not a blocking control request.
+type ReplyAttachment struct {
+	Kind        string // "file" | "image"
+	Path        string
+	Name        string
+	ContentType string
+}
+
 // Compaction carries a context-compaction pass for the CompactionStarted /
 // CompactionDone events. On CompactionStarted only Trigger is set. On
 // CompactionDone, Messages/Summary/Archive are filled in (an aborted pass leaves
@@ -255,11 +267,12 @@ type Event struct {
 	// session (Usage events only), so a frontend can show the aggregate hit-rate
 	// — which doesn't crater on a short turn or after compaction — alongside
 	// Usage's single-turn numbers.
-	SessionHit   int        // Usage: cumulative cache-hit prompt tokens this session
-	SessionMiss  int        // Usage: cumulative cache-miss prompt tokens this session
-	Level        Level      // Notice
-	Approval     Approval   // ApprovalRequest
-	Ask          Ask        // AskRequest
+	SessionHit   int      // Usage: cumulative cache-hit prompt tokens this session
+	SessionMiss  int      // Usage: cumulative cache-miss prompt tokens this session
+	Level        Level    // Notice
+	Approval     Approval // ApprovalRequest
+	Ask          Ask      // AskRequest
+	Attachment   *ReplyAttachment
 	Err          error      // TurnDone: non-nil on failure
 	Compaction   Compaction // Compaction
 	Guardian     GuardianResult

@@ -231,6 +231,42 @@ func TestRenderSinkSuppressesReasoning(t *testing.T) {
 	}
 }
 
+func TestRenderSinkPreservesTextAttachmentOrder(t *testing.T) {
+	adapter := newFakeAdapter(PlatformFeishu, "fake-feishu")
+	sink := newRenderSink(context.Background(), adapter, "feishu-feishu", "feishu", "chat-1", ChatDM, "user-1", "/workspace", "msg-1", slog.New(slog.NewTextHandler(io.Discard, nil)), renderObservability{}, nil, nil)
+
+	sink.Emit(event.Event{Kind: event.Text, Text: "先看图片"})
+	sink.Emit(event.Event{Kind: event.ReplyAttachmentEvent, Attachment: &event.ReplyAttachment{
+		Kind: "image",
+		Path: "artifacts/preview.png",
+		Name: "preview.png",
+	}})
+	sink.Emit(event.Event{Kind: event.Text, Text: "再看文件"})
+	sink.Emit(event.Event{Kind: event.ReplyAttachmentEvent, Attachment: &event.ReplyAttachment{
+		Kind: "file",
+		Path: "artifacts/report.pdf",
+		Name: "report.pdf",
+	}})
+	sink.Emit(event.Event{Kind: event.TurnDone})
+
+	sent := adapter.sentMessages()
+	if len(sent) != 4 {
+		t.Fatalf("sent count = %d, want text,image,text,file", len(sent))
+	}
+	if sent[0].Text != "先看图片" {
+		t.Fatalf("sent[0].text = %q, want first text", sent[0].Text)
+	}
+	if sent[1].Attachment == nil || sent[1].Attachment.Kind != "image" || sent[1].Attachment.Path != "artifacts/preview.png" {
+		t.Fatalf("sent[1] = %+v, want image attachment", sent[1])
+	}
+	if sent[2].Text != "再看文件" {
+		t.Fatalf("sent[2].text = %q, want second text", sent[2].Text)
+	}
+	if sent[3].Attachment == nil || sent[3].Attachment.Kind != "file" || sent[3].Attachment.Path != "artifacts/report.pdf" {
+		t.Fatalf("sent[3] = %+v, want file attachment", sent[3])
+	}
+}
+
 func TestRenderSinkLogsReasoningOnlyOnce(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))

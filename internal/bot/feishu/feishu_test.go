@@ -455,7 +455,36 @@ func TestBuildMarkdownCard(t *testing.T) {
 	}
 }
 
-func TestSendMessageUploadsAttachmentRefs(t *testing.T) {
+func TestSendMessageKeepsPathLikeTextLiteral(t *testing.T) {
+	var (
+		gotType    string
+		gotContent string
+	)
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sendContent: func(_ context.Context, _ bot.OutboundMessage, msgType, content string) (bot.SendResult, error) {
+			gotType = msgType
+			gotContent = content
+			return bot.SendResult{MessageID: "m1"}, nil
+		},
+	}
+
+	_, err := a.sendMessage(context.Background(), bot.OutboundMessage{
+		ChatID: "chat-1",
+		Text:   "结果如下\n@erp/report.txt\n@erp/shot.png",
+	})
+	if err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+	if gotType == "" {
+		t.Fatal("sendContent not called")
+	}
+	if !strings.Contains(gotContent, "@erp/report.txt") || !strings.Contains(gotContent, "@erp/shot.png") {
+		t.Fatalf("content = %q, want path-like reply text preserved", gotContent)
+	}
+}
+
+func TestSendMessageUploadsStructuredAttachment(t *testing.T) {
 	workspace := t.TempDir()
 	filesDir := filepath.Join(workspace, "erp")
 	if err := os.MkdirAll(filesDir, 0o755); err != nil {
@@ -463,9 +492,6 @@ func TestSendMessageUploadsAttachmentRefs(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(filesDir, "report.txt"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("write report: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(filesDir, "shot.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o644); err != nil {
-		t.Fatalf("write shot: %v", err)
 	}
 	var types []string
 	a := &adapter{
@@ -480,33 +506,25 @@ func TestSendMessageUploadsAttachmentRefs(t *testing.T) {
 			}
 			return "file_key_1", nil
 		},
-		uploadImage: func(_ context.Context, raw []byte) (string, error) {
-			if len(raw) == 0 || raw[1] != 'P' {
-				t.Fatalf("uploadImage got %v", raw)
-			}
-			return "img_key_1", nil
-		},
 	}
 
 	_, err := a.sendMessage(context.Background(), bot.OutboundMessage{
 		ChatID:        "chat-1",
 		WorkspaceRoot: workspace,
-		Text:          "结果如下\n@erp/report.txt\n@erp/shot.png",
+		Attachment: &bot.OutboundAttachment{
+			Kind: "file",
+			Path: "erp/report.txt",
+			Name: "report.txt",
+		},
 	})
 	if err != nil {
 		t.Fatalf("sendMessage: %v", err)
 	}
-	if len(types) != 3 {
-		t.Fatalf("send types = %#v, want text+file+image", types)
+	if len(types) != 1 {
+		t.Fatalf("send types = %#v, want file only", types)
 	}
-	if !strings.HasPrefix(types[0], "post:") && !strings.HasPrefix(types[0], "interactive:") && !strings.HasPrefix(types[0], "text:") {
-		t.Fatalf("first send = %q, want text-like message", types[0])
-	}
-	if !strings.HasPrefix(types[1], "file:") || !strings.Contains(types[1], "file_key_1") {
-		t.Fatalf("second send = %q, want file message", types[1])
-	}
-	if !strings.HasPrefix(types[2], "image:") || !strings.Contains(types[2], "img_key_1") {
-		t.Fatalf("third send = %q, want image message", types[2])
+	if !strings.HasPrefix(types[0], "file:") || !strings.Contains(types[0], "file_key_1") {
+		t.Fatalf("first send = %q, want file message", types[0])
 	}
 }
 

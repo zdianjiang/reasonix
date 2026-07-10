@@ -1534,11 +1534,19 @@ keep exactly one in_progress, and flip each to completed as you finish it — up
 the list as you go, not just at the end.
 In plan mode the harness blocks writer tools: do read-only research, then write a
 concise plan as your reply and stop. The user is asked to approve before anything
-is changed; once approved, work through the steps, updating the task list as you go.`
+is changed; once approved, work through the steps, updating the task list as you go.
+When the user asks you to send a workspace file or image in bot/chat mode, do not
+just mention the path in text. Call the message_send_file or message_send_image tool explicitly
+so the channel adapter can deliver the attachment in order with your reply.`
 
 // UserDecisionPolicy is appended to every system prompt, including user-custom
 // prompts, so custom personas cannot accidentally remove the `ask` UI contract.
 const UserDecisionPolicy = `User-owned choices: when a real decision belongs to the user — scope, approach, library, risk, manual validation, or any ambiguous or consequential path — and there is no obvious safe default, call the ask tool with 2-4 concrete options so the UI shows a choice. Do not ask in prose, infer a choice from silence, or continue by choosing for the user; do not choose for the user. Tool-approval bypass modes do not answer ask questions or approve plans. If no interactive user is available, the ask tool returns a model-assumption fallback; state that assumption and choose the safest reversible path.`
+
+// SendAttachmentPolicy is appended to every system prompt so the model uses the
+// explicit outbound media tools instead of path-like text when a bot user asks
+// for files or images.
+const SendAttachmentPolicy = `Bot media sending: when the user asks you to send or upload a workspace file or image in chat, do not merely mention the path in text. Call message_send_file for ordinary files and message_send_image for images so the adapter can deliver the attachment in the correct reply order.`
 
 // LanguagePolicy is the auto fallback appended to the system prompt when no
 // concrete UI language is resolved. It is static English text, so it stays part

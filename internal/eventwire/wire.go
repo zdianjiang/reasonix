@@ -19,6 +19,7 @@ type Event struct {
 	Usage           *Usage           `json:"usage,omitempty"`
 	Approval        *Approval        `json:"approval,omitempty"`
 	Ask             *Ask             `json:"ask,omitempty"`
+	Attachment      *ReplyAttachment `json:"attachment,omitempty"`
 	Compaction      *Compaction      `json:"compaction,omitempty"`
 	Guardian        *Guardian        `json:"guardian,omitempty"`
 	Err             string           `json:"err,omitempty"`
@@ -94,6 +95,10 @@ func ToWire(e event.Event) Event {
 		w.Approval = &Approval{ID: e.Approval.ID, Tool: e.Approval.Tool, Subject: e.Approval.Subject, Reason: e.Approval.Reason}
 	case event.AskRequest:
 		w.Ask = ToWireAsk(e.Ask)
+	case event.ReplyAttachmentEvent:
+		if a := e.Attachment; a != nil {
+			w.Attachment = &ReplyAttachment{Kind: a.Kind, Path: a.Path, Name: a.Name, ContentType: a.ContentType}
+		}
 	case event.CompactionStarted, event.CompactionDone:
 		w.Compaction = &Compaction{
 			Trigger: e.Compaction.Trigger, Messages: e.Compaction.Messages,
@@ -186,6 +191,14 @@ type AskQuestion struct {
 type Ask struct {
 	ID        string        `json:"id"`
 	Questions []AskQuestion `json:"questions"`
+}
+
+// ReplyAttachment is the JSON form of an event.ReplyAttachment.
+type ReplyAttachment struct {
+	Kind        string `json:"kind,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Name        string `json:"name,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
 }
 
 // Profile carries the subagent model/effort resolved for a tool call.
@@ -333,6 +346,7 @@ var kindNames = map[event.Kind]string{
 	event.Phase:                    "phase",
 	event.ApprovalRequest:          "approval_request",
 	event.AskRequest:               "ask_request",
+	event.ReplyAttachmentEvent:     "reply_attachment",
 	event.TurnDone:                 "turn_done",
 	event.CompactionStarted:        "compaction_started",
 	event.CompactionDone:           "compaction_done",

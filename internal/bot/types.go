@@ -77,16 +77,26 @@ func (m InboundMessage) Session() SessionSource {
 
 // OutboundMessage 是发送到平台的消息。
 type OutboundMessage struct {
-	ConnectionID  string           `json:"connection_id,omitempty"`
-	Domain        string           `json:"domain,omitempty"`
-	ChatID        string           `json:"chat_id"`
-	ChatType      ChatType         `json:"chat_type,omitempty"`
-	WorkspaceRoot string           `json:"workspace_root,omitempty"`
-	Text          string           `json:"text,omitempty"`
-	MediaURLs     []string         `json:"media_urls,omitempty"`
-	ReplyToMsgID  string           `json:"reply_to_msg_id,omitempty"`
-	Keyboard      *InlineKeyboard  `json:"keyboard,omitempty"`
-	Card          *InteractiveCard `json:"card,omitempty"`
+	ConnectionID  string              `json:"connection_id,omitempty"`
+	Domain        string              `json:"domain,omitempty"`
+	ChatID        string              `json:"chat_id"`
+	ChatType      ChatType            `json:"chat_type,omitempty"`
+	WorkspaceRoot string              `json:"workspace_root,omitempty"`
+	Text          string              `json:"text,omitempty"`
+	Attachment    *OutboundAttachment `json:"attachment,omitempty"`
+	MediaURLs     []string            `json:"media_urls,omitempty"`
+	ReplyToMsgID  string              `json:"reply_to_msg_id,omitempty"`
+	Keyboard      *InlineKeyboard     `json:"keyboard,omitempty"`
+	Card          *InteractiveCard    `json:"card,omitempty"`
+}
+
+// OutboundAttachment is one structured file/image to send in-order with other
+// outbound reply segments.
+type OutboundAttachment struct {
+	Kind        string `json:"kind,omitempty"` // "file" | "image"
+	Path        string `json:"path,omitempty"`
+	Name        string `json:"name,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
 }
 
 // InlineKeyboard 是内联键盘（用于 QQ 审批）。

@@ -360,10 +360,19 @@ mid-turn guidance 注入，而不是等完整回合结束。`queue_cap` 和 `que
 配置了角色列表时，这些命令需要 admin 权限。
 
 当适配器提供媒体 URL 时，gateway 会把文件下载到当前工作区的
-`.reasonix/attachments`，并以 `@.reasonix/attachments/...` 形式传给
-Reasonix。保存失败的附件会在 IM 中提示，文本内容仍会继续处理。内置
-Feishu、Weixin、QQ 适配器当前仍以文本事件为主，普通 IM 附件抽取可以继续在
-适配器层补齐。
+`.reasonix/attachments`，并作为当前工作区里的本地文件交给 Reasonix。
+保存失败的附件会在 IM 中提示，文本内容仍会继续处理。
+
+如果要从 bot 会话里把文件或图片发回 IM，Reasonix 现在使用显式工具调用，
+不再从回复文本里猜测路径：
+
+- `message_send_file`：向当前聊天发送一个工作区文件
+- `message_send_image`：向当前聊天发送一个工作区图片
+
+这样可以保证回复顺序稳定：如果模型先输出文本，再调用
+`message_send_image`，然后继续输出文本，bot 会按 **文本 → 图片 → 文本**
+的顺序发送。仅仅在回复文本里提到 `report.pdf` 或 `@report.pdf`
+**不会** 自动上传或发送该文件。
 
 ## 审批与 YOLO
 

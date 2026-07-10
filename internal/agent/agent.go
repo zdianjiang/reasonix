@@ -2462,6 +2462,7 @@ func (a *Agent) executeOne(ctx context.Context, call provider.ToolCall) toolOutc
 	if a.configWriteApprover != nil {
 		cctx = tool.WithConfigWriteApprover(cctx, a.configWriteApprover)
 	}
+	cctx = tool.WithEventSink(cctx, a.sink)
 	if v := a.responseLanguage.Load(); v != nil {
 		if lang, ok := v.(string); ok {
 			cctx = WithResponseLanguagePreference(cctx, lang)

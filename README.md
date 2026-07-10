@@ -128,7 +128,8 @@ commands, `@` references, and two-model setup are all in the
 - **[Guide](./docs/GUIDE.md)** — configuration, permissions & sandbox, plugins
   (MCP), slash commands, `@` references, two-model collaboration.
 - **[Bot guide](./docs/BOT_GUIDE.md)** — connect Feishu, Lark, and WeChat bots
-  from the desktop app, then use approvals, YOLO, and commands from IM.
+  from the desktop app, then use approvals, YOLO, IM commands, and
+  `message_send_file` / `message_send_image` for outbound media.
 - **[Spec](./docs/SPEC.md)** — engineering contract: architecture, registries,
   data types, and roadmap.
 - **[Task contracts & pause policy](./docs/TASK_CONTRACT.md)** — structure

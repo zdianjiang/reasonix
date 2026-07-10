@@ -390,10 +390,19 @@ jump to indexed targets and, when role lists are configured, require an admin.
 
 When an adapter supplies media URLs, the gateway downloads those files into the
 current workspace's `.reasonix/attachments` directory and passes them to
-Reasonix as `@.reasonix/attachments/...` references. If an attachment cannot be
-saved, the bot sends a short warning and continues with the available text. The
-built-in Feishu, Weixin, and QQ adapters currently focus on text events; ordinary
-IM attachment extraction can be added at the adapter layer.
+Reasonix as local workspace files. If an attachment cannot be saved, the bot
+sends a short warning and continues with the available text.
+
+To send media back out from a bot conversation, Reasonix now uses explicit tool
+calls instead of parsing file-like paths from reply text:
+
+- `message_send_file` sends one workspace file to the current chat
+- `message_send_image` sends one workspace image to the current chat
+
+This keeps reply ordering stable: if the model emits text, then calls
+`message_send_image`, then emits more text, the bot sends text → image → text
+in that same order. Merely mentioning a path such as `report.pdf` or
+`@report.pdf` in reply text does **not** upload or send the file.
 
 ## Approvals and YOLO
 
