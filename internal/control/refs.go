@@ -500,6 +500,9 @@ func (c *Controller) inputImages(line string) []string {
 func visionRefImageDataURL(r ref, baseDir string) (string, error) {
 	switch r.kind {
 	case refImage:
+		if strings.TrimSpace(baseDir) != "" {
+			return visionFileImageDataURL(r.path, baseDir)
+		}
 		return visionImageDataURL(r.path)
 	case refFile:
 		return visionFileImageDataURL(r.path, baseDir)

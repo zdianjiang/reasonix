@@ -113,14 +113,32 @@ func (s *renderSink) Emit(e event.Event) {
 	case event.ReplyAttachmentEvent:
 		s.flush()
 		if e.Attachment != nil {
-			_ = s.sendReplyPayload(ReplyPayload{Segments: []ReplySegment{{
+			if err := s.sendReplyPayload(ReplyPayload{Segments: []ReplySegment{{
 				Attachment: &OutboundAttachment{
 					Kind:        strings.TrimSpace(e.Attachment.Kind),
 					Path:        strings.TrimSpace(e.Attachment.Path),
 					Name:        strings.TrimSpace(e.Attachment.Name),
 					ContentType: strings.TrimSpace(e.Attachment.ContentType),
 				},
-			}}})
+			}}}); err != nil {
+				s.logger.Warn("bot attachment send failed",
+					"chat_type", s.chatType,
+					"chat", hashID(s.chatID),
+					"reply_to", hashID(s.replyTo),
+					"path", strings.TrimSpace(e.Attachment.Path),
+					"kind", strings.TrimSpace(e.Attachment.Kind),
+					"err", err,
+				)
+				_ = s.send(OutboundMessage{
+					ConnectionID:  s.connID,
+					Domain:        s.domain,
+					ChatID:        s.chatID,
+					ChatType:      s.chatType,
+					WorkspaceRoot: s.workspaceRoot,
+					Text:          fmt.Sprintf("⚠️ 附件发送失败：%v", err),
+					ReplyToMsgID:  s.replyTo,
+				})
+			}
 		}
 
 	case event.ToolDispatch:

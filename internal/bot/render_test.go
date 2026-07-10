@@ -3,6 +3,7 @@ package bot
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -11,6 +12,17 @@ import (
 
 	"reasonix/internal/event"
 )
+
+type failingAttachmentAdapter struct {
+	*fakeAdapter
+}
+
+func (f *failingAttachmentAdapter) Send(ctx context.Context, msg OutboundMessage) (SendResult, error) {
+	if msg.Attachment != nil {
+		return SendResult{}, fmt.Errorf("attachment transport failed")
+	}
+	return f.fakeAdapter.Send(ctx, msg)
+}
 
 func TestApprovalCardCarriesChatType(t *testing.T) {
 	card := approvalCard(event.Approval{ID: "approval-1"}, ChatDM, "allowed-user")
@@ -264,6 +276,25 @@ func TestRenderSinkPreservesTextAttachmentOrder(t *testing.T) {
 	}
 	if sent[3].Attachment == nil || sent[3].Attachment.Kind != "file" || sent[3].Attachment.Path != "artifacts/report.pdf" {
 		t.Fatalf("sent[3] = %+v, want file attachment", sent[3])
+	}
+}
+
+func TestRenderSinkReportsAttachmentSendFailure(t *testing.T) {
+	adapter := &failingAttachmentAdapter{fakeAdapter: newFakeAdapter(PlatformFeishu, "fake-feishu")}
+	sink := newRenderSink(context.Background(), adapter, "feishu-feishu", "feishu", "chat-1", ChatDM, "user-1", "/workspace", "msg-1", slog.New(slog.NewTextHandler(io.Discard, nil)), renderObservability{}, nil, nil)
+
+	sink.Emit(event.Event{Kind: event.ReplyAttachmentEvent, Attachment: &event.ReplyAttachment{
+		Kind: "file",
+		Path: "artifacts/report.pdf",
+		Name: "report.pdf",
+	}})
+
+	sent := adapter.sentMessages()
+	if len(sent) != 1 {
+		t.Fatalf("sent count = %d, want one warning message", len(sent))
+	}
+	if !strings.Contains(sent[0].Text, "附件发送失败") {
+		t.Fatalf("warning text = %q, want attachment failure notice", sent[0].Text)
 	}
 }
 

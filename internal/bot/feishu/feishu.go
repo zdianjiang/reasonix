@@ -660,7 +660,7 @@ func (a *adapter) sendStructuredAttachment(ctx context.Context, msg bot.Outbound
 	if ref == "" {
 		return bot.SendResult{}, fmt.Errorf("feishu attachment path is empty")
 	}
-	return a.sendAttachmentRef(ctx, msg, ref)
+	return a.sendAttachmentRef(ctx, msg, ref, strings.TrimSpace(att.Name))
 }
 
 func (a *adapter) sendTextContent(ctx context.Context, msg bot.OutboundMessage, text string) (bot.SendResult, error) {
@@ -896,10 +896,13 @@ func (a *adapter) sendSDKContent(ctx context.Context, msg bot.OutboundMessage, m
 	return bot.SendResult{MessageID: stringPtrValue(resp.Data.MessageId)}, nil
 }
 
-func (a *adapter) sendAttachmentRef(ctx context.Context, msg bot.OutboundMessage, ref string) (bot.SendResult, error) {
+func (a *adapter) sendAttachmentRef(ctx context.Context, msg bot.OutboundMessage, ref string, preferredName string) (bot.SendResult, error) {
 	name, raw, isImage, err := readWorkspaceFileRef(msg.WorkspaceRoot, ref)
 	if err != nil {
 		return bot.SendResult{}, err
+	}
+	if strings.TrimSpace(preferredName) != "" {
+		name = strings.TrimSpace(preferredName)
 	}
 	if isImage {
 		imageKey, err := a.uploadOutboundImage(ctx, raw)
@@ -913,7 +916,7 @@ func (a *adapter) sendAttachmentRef(ctx context.Context, msg bot.OutboundMessage
 	if err != nil {
 		return bot.SendResult{}, err
 	}
-	payload, _ := json.Marshal(fileContent{FileKey: fileKey})
+	payload, _ := json.Marshal(fileContent{FileKey: fileKey, FileName: name})
 	return a.sendSDKContent(ctx, msg, larkim.MsgTypeFile, string(payload))
 }
 

@@ -42,6 +42,24 @@ func TestControllerInputImagesResolvesAttachment(t *testing.T) {
 	}
 }
 
+func TestControllerInputImagesResolvesWorkspaceAttachmentOutsideCWD(t *testing.T) {
+	cwd := t.TempDir()
+	workspace := t.TempDir()
+	t.Chdir(cwd)
+	writeVisionTestConfig(t, workspace)
+	ref, err := SaveImageBytesInRoot(workspace, "image/png", mustBase64(t, tinyPNG))
+	if err != nil {
+		t.Fatalf("SaveImageBytesInRoot: %v", err)
+	}
+	urls := (&Controller{workspaceRoot: workspace, modelRef: "custom/vision-pro"}).inputImages("look at @" + ref)
+	if len(urls) != 1 {
+		t.Fatalf("inputImages = %v, want one resolved workspace attachment data URL", urls)
+	}
+	if !strings.HasPrefix(urls[0], "data:image/png;base64,") {
+		t.Errorf("resolved url = %q, want a png data URL", urls[0])
+	}
+}
+
 func TestControllerInputImagesIgnoresNonAttachmentRefs(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if urls := New(Options{}).inputImages("plain text with @missing.png"); len(urls) != 0 {

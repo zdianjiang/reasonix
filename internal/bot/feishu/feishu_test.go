@@ -526,6 +526,9 @@ func TestSendMessageUploadsStructuredAttachment(t *testing.T) {
 	if !strings.HasPrefix(types[0], "file:") || !strings.Contains(types[0], "file_key_1") {
 		t.Fatalf("first send = %q, want file message", types[0])
 	}
+	if !strings.Contains(types[0], `"file_name":"report.txt"`) {
+		t.Fatalf("first send = %q, want file_name in payload", types[0])
+	}
 }
 
 func TestSendMessageRejectsOutsideWorkspaceRef(t *testing.T) {
