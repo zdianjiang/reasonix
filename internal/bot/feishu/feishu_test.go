@@ -555,13 +555,20 @@ func TestSendMessageRejectsOutsideWorkspaceRef(t *testing.T) {
 
 func TestSendTextContentUsesPostForPlainMultilineText(t *testing.T) {
 	var gotType string
+	var gotTitle string
 	a := &adapter{
+		cfg:    config.FeishuBotConfig{PostTitle: "采购助手"},
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		sendContent: func(_ context.Context, _ bot.OutboundMessage, msgType, content string) (bot.SendResult, error) {
 			gotType = msgType
 			if !strings.Contains(content, `"zh_cn"`) {
 				t.Fatalf("content = %q, want post json", content)
 			}
+			var payload postContent
+			if err := json.Unmarshal([]byte(content), &payload); err != nil {
+				t.Fatalf("unmarshal post payload: %v", err)
+			}
+			gotTitle = payload.ZhCN.Title
 			return bot.SendResult{MessageID: "m1"}, nil
 		},
 	}
@@ -571,5 +578,8 @@ func TestSendTextContentUsesPostForPlainMultilineText(t *testing.T) {
 	}
 	if gotType != larkim.MsgTypePost {
 		t.Fatalf("msgType = %q, want post", gotType)
+	}
+	if gotTitle != "采购助手" {
+		t.Fatalf("post title = %q, want custom title", gotTitle)
 	}
 }

@@ -247,6 +247,7 @@ stalled_warning_seconds = 900   # warn once per background job after this many q
 # app_id              = ""
 # app_secret_env       = "FEISHU_BOT_APP_SECRET"
 # verification_token   = ""
+# post_title          = "Reasonix"  # 飞书/Lark 多行纯文本消息走 post 时显示的标题；可设为 ""
 # mode                = "webhook"   # webhook | websocket（websocket 需接官方 SDK 长连接）
 # webhook_port        = 8080
 # require_mention     = true

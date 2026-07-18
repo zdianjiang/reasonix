@@ -641,6 +641,7 @@ type FeishuBotConfig struct {
 	AppID             string `toml:"app_id"`
 	AppSecretEnv      string `toml:"app_secret_env"`     // 如 FEISHU_BOT_APP_SECRET
 	VerificationToken string `toml:"verification_token"` // 事件订阅验证 token
+	PostTitle         string `toml:"post_title"`         // 飞书/Lark post 消息标题
 	Mode              string `toml:"mode"`               // webhook（默认）| websocket
 	WebhookPort       int    `toml:"webhook_port"`       // webhook 模式端口
 	RequireMention    bool   `toml:"require_mention"`
@@ -1615,7 +1616,7 @@ func Default() *Config {
 			},
 			Allowlist: BotAllowlist{Enabled: true},
 			QQ:        QQBotConfig{AppSecretEnv: "QQ_BOT_APP_SECRET"},
-			Feishu:    FeishuBotConfig{Domain: "feishu", AppSecretEnv: "FEISHU_BOT_APP_SECRET", Mode: "webhook", WebhookPort: 8080, RequireMention: true},
+			Feishu:    FeishuBotConfig{Domain: "feishu", AppSecretEnv: "FEISHU_BOT_APP_SECRET", PostTitle: "Reasonix", Mode: "webhook", WebhookPort: 8080, RequireMention: true},
 			Weixin:    WeixinBotConfig{AccountID: "default", TokenEnv: "WEIXIN_BOT_TOKEN", APIBase: "https://ilinkai.weixin.qq.com"},
 		},
 		Providers: []ProviderEntry{

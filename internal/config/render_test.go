@@ -62,6 +62,16 @@ func TestUserConfigPathUsesReasonixHome(t *testing.T) {
 	}
 }
 
+func TestRenderTOMLIncludesFeishuPostTitle(t *testing.T) {
+	cfg := Default()
+	cfg.Bot.Feishu.PostTitle = "采购助手"
+
+	rendered := RenderTOMLForScope(cfg, RenderScopeUser)
+	if !strings.Contains(rendered, `post_title = "采购助手"`) {
+		t.Fatalf("rendered config missing feishu post_title:\n%s", rendered)
+	}
+}
+
 func TestReasonixManagedConfigPathsAreConfigFilesOnly(t *testing.T) {
 	home := isolateUserConfigHome(t)
 	setRuntimeGOOS(t, "windows")

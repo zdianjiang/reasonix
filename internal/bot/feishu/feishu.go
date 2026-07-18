@@ -73,7 +73,6 @@ type decodedIncomingContent struct {
 
 const feishuPendingReactionEmoji = "OnIt"
 const feishuMaxInboundResourceBytes = 25 * 1024 * 1024
-const feishuDefaultPostTitle = "Reasonix"
 
 // feishuEvent 飞书事件结构。
 type feishuEvent struct {
@@ -665,7 +664,7 @@ func (a *adapter) sendStructuredAttachment(ctx context.Context, msg bot.Outbound
 
 func (a *adapter) sendTextContent(ctx context.Context, msg bot.OutboundMessage, text string) (bot.SendResult, error) {
 	if shouldUseFeishuPost(text) {
-		postContent, err := buildPostMessage(text)
+		postContent, err := buildPostMessage(strings.TrimSpace(a.cfg.PostTitle), text)
 		if err == nil {
 			return a.sendSDKContent(ctx, msg, larkim.MsgTypePost, postContent)
 		}
@@ -703,7 +702,7 @@ func buildMarkdownCard(content string) (string, error) {
 	return string(data), nil
 }
 
-func buildPostMessage(content string) (string, error) {
+func buildPostMessage(title, content string) (string, error) {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(content, "\n")
 	rows := make([][]postElement, 0, len(lines))
@@ -715,8 +714,8 @@ func buildPostMessage(content string) (string, error) {
 		rows = append(rows, []postElement{{Tag: "text", Text: ""}})
 	}
 	body := postContent{
-		ZhCN: &postBody{Title: feishuDefaultPostTitle, Content: rows},
-		EnUS: &postBody{Title: feishuDefaultPostTitle, Content: rows},
+		ZhCN: &postBody{Title: title, Content: rows},
+		EnUS: &postBody{Title: title, Content: rows},
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
