@@ -213,6 +213,7 @@ type FeishuBotView struct {
 	AppSecretEnv      string `json:"appSecretEnv"`
 	SecretSet         bool   `json:"secretSet"`
 	VerificationToken string `json:"verificationToken"`
+	PostTitle         string `json:"postTitle"`
 	Mode              string `json:"mode"`
 	WebhookPort       int    `json:"webhookPort"`
 	RequireMention    bool   `json:"requireMention"`
@@ -973,6 +974,7 @@ func botSettingsView(b config.BotConfig) BotSettingsView {
 			AppSecretEnv:      b.Feishu.AppSecretEnv,
 			SecretSet:         strings.TrimSpace(b.Feishu.AppSecretEnv) != "" && os.Getenv(b.Feishu.AppSecretEnv) != "",
 			VerificationToken: b.Feishu.VerificationToken,
+			PostTitle:         b.Feishu.PostTitle,
 			Mode:              mode,
 			WebhookPort:       b.Feishu.WebhookPort,
 			RequireMention:    b.Feishu.RequireMention,
@@ -1377,6 +1379,7 @@ func desktopBotConfigConfigured(bot config.BotConfig) bool {
 		bot.Feishu.Domain != defaults.Feishu.Domain ||
 		bot.Feishu.AppSecretEnv != defaults.Feishu.AppSecretEnv ||
 		strings.TrimSpace(bot.Feishu.VerificationToken) != "" ||
+		bot.Feishu.PostTitle != defaults.Feishu.PostTitle ||
 		bot.Feishu.Mode != defaults.Feishu.Mode ||
 		bot.Feishu.WebhookPort != defaults.Feishu.WebhookPort ||
 		bot.Feishu.RequireMention != defaults.Feishu.RequireMention {
@@ -2770,6 +2773,7 @@ func (a *App) SetBotSettings(b BotSettingsView) error {
 			AppID:             strings.TrimSpace(b.Feishu.AppID),
 			AppSecretEnv:      strings.TrimSpace(b.Feishu.AppSecretEnv),
 			VerificationToken: strings.TrimSpace(b.Feishu.VerificationToken),
+			PostTitle:         b.Feishu.PostTitle,
 			Mode:              strings.TrimSpace(b.Feishu.Mode),
 			WebhookPort:       b.Feishu.WebhookPort,
 			RequireMention:    b.Feishu.RequireMention,

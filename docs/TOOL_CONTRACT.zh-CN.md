@@ -18,9 +18,17 @@
 | `kill_shell` | false | 终止后台 `bash` 或 `task` job。 |
 | `ls` | true | 列出目录条目，可递归。 |
 | `move_file` | false | 移动或重命名文件。 |
+| `message_send_file` | true | 向当前 bot 聊天发送一个工作区内文件作为结构化附件；拒绝工作区外路径。 |
+| `message_send_image` | true | 向当前 bot 聊天发送一个工作区内图片作为图片附件；拒绝非图片文件和工作区外路径。 |
 | `multi_edit` | false | 对单个文件原子应用多个编辑。 |
 | `notebook_edit` | false | 编辑 Jupyter notebook 的单个 cell。 |
 | `read_file` | true | 按可分页的行号格式读取文本文件。 |
+| `schedule_cancel` | false | 取消（删除）当前聊天中的一个定时任务；需要先知道任务 id，可先调用 `schedule_list`。 |
+| `schedule_delete` | false | 删除当前聊天中的定时任务；需要先知道任务 id，可先调用 `schedule_list`。 |
+| `schedule_list` | true | 列出当前聊天中的定时任务，便于 AI 检查、确认或选择后续要修改的任务。 |
+| `schedule_pause` | false | 暂停当前聊天中的定时任务，之后可通过 `schedule_resume` 恢复。 |
+| `schedule_resume` | false | 恢复当前聊天中一个已暂停的定时任务。 |
+| `schedule_task` | false | 为当前聊天创建循环定时任务。任务会按请求的 schedule 自动运行指定 prompt 或消息；最小周期为一分钟，例如 `1h`、`30m`、`daily@09:00`、`weekly:mon@09:00`。 |
 | `todo_write` | true | 记录并替换当前工作的结构化任务列表。 |
 | `wait` | true | 等待后台 job 完成并返回最终输出。 |
 | `web_fetch` | true | 通过 HTTP/HTTPS 获取 URL 文本内容。 |

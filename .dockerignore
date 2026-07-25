@@ -1,0 +1,11 @@
+.git
+.agents
+.codex
+.claude
+bin
+dist
+node_modules
+desktop/frontend/node_modules
+testenv/feishu-schedule/.env
+testenv/feishu-schedule/reasonix.toml
+testenv/feishu-schedule/state

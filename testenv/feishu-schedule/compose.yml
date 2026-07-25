@@ -1,0 +1,24 @@
+services:
+  reasonix-feishu-schedule:
+    build:
+      context: ../..
+      dockerfile: testenv/feishu-schedule/Dockerfile
+    image: reasonix-feishu-schedule:test
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REASONIX_HOME: /state/reasonix
+      REASONIX_STATE_HOME: /state/reasonix
+    volumes:
+      - ./reasonix.toml:/config/reasonix.toml:ro
+      - ./state:/state
+      - ${WORKSPACE_ROOT:-../..}:/workspace:rw
+    command:
+      - --config
+      - /config/reasonix.toml
+      - bot
+      - start
+      - --channels
+      - feishu
+      - --dir
+      - /workspace

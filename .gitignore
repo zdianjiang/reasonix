@@ -62,3 +62,7 @@ benchmarks/context-maintenance-e2e/run/
 
 # Local scratch
 temp/
+# Isolated Feishu schedule integration-test secrets and state.
+testenv/feishu-schedule/.env
+testenv/feishu-schedule/reasonix.toml
+testenv/feishu-schedule/state/

@@ -92,6 +92,11 @@ func NormalizeQueueDrop(drop string) string {
 func BuildSessionKey(src SessionSource) string {
 	var scope string
 	source := sessionSourceID(src)
+	if src.SessionID != "" {
+		scope = fmt.Sprintf("%s:scheduled:%s", source, src.SessionID)
+		h := sha256.Sum256([]byte(scope))
+		return hex.EncodeToString(h[:])[:16]
+	}
 	switch src.ChatType {
 	case ChatDM:
 		scope = fmt.Sprintf("%s:dm:%s", source, src.ChatID)
@@ -140,6 +145,7 @@ var slashCommands = map[string]bool{
 	"/sessions": true,
 	"/attach":   true,
 	"/search":   true,
+	"/schedule": true,
 	"/status":   true,
 	"/help":     true,
 }

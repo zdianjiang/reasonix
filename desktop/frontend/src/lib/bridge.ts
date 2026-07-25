@@ -1148,6 +1148,7 @@ function makeMockApp(): AppBindings {
         appSecretEnv: "FEISHU_BOT_APP_SECRET",
         secretSet: false,
         verificationToken: "",
+        postTitle: "Reasonix",
         mode: "webhook",
         webhookPort: 8080,
         requireMention: true,

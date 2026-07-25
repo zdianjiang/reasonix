@@ -1,0 +1,32 @@
+# Copy to reasonix.toml, then substitute the values provided for the test bot.
+default_model = "deepseek/deepseek-v4-flash"
+
+[[providers]]
+name = "deepseek"
+kind = "openai"
+base_url = "https://api.deepseek.com"
+models = ["deepseek-v4-flash"]
+default = "deepseek-v4-flash"
+api_key_env = "DEEPSEEK_API_KEY"
+
+[bot]
+enabled = true
+model = "deepseek/deepseek-v4-flash"
+max_steps = 12
+
+[bot.allowlist]
+enabled = true
+# Keep this false for the test. Add the Feishu open_id supplied for the tester.
+allow_all = false
+feishu_users = ["REPLACE_TESTER_OPEN_ID"]
+feishu_admins = ["REPLACE_TESTER_OPEN_ID"]
+feishu_approvers = ["REPLACE_TESTER_OPEN_ID"]
+
+[bot.feishu]
+enabled = true
+app_id = "REPLACE_FEISHU_APP_ID"
+app_secret_env = "FEISHU_BOT_APP_SECRET"
+# WebSocket avoids exposing a webhook port or public callback endpoint.
+mode = "websocket"
+require_mention = false
+post_title = "Reasonix Schedule Test"

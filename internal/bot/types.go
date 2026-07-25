@@ -33,6 +33,7 @@ type SessionSource struct {
 	ChatID       string   `json:"chat_id"`
 	UserID       string   `json:"user_id"`
 	ThreadID     string   `json:"thread_id,omitempty"`
+	SessionID    string   `json:"session_id,omitempty"`
 }
 
 // InboundMessage 是从任一平台收到的入站消息。
@@ -45,13 +46,16 @@ type InboundMessage struct {
 	UserID       string   `json:"user_id"`
 	UserName     string   `json:"user_name"`
 	// OperatorID, when set, is the authenticated actor gated by the allowlist; UserID stays routing-only.
-	OperatorID string         `json:"operator_id,omitempty"`
-	Text       string         `json:"text"`
-	MessageID  string         `json:"message_id"`
-	ThreadID   string         `json:"thread_id,omitempty"`
-	MediaURLs  []string       `json:"media_urls,omitempty"`
-	Media      []InboundMedia `json:"media,omitempty"`
-	Raw        any            `json:"-"`
+	OperatorID string `json:"operator_id,omitempty"`
+	Text       string `json:"text"`
+	MessageID  string `json:"message_id"`
+	ThreadID   string `json:"thread_id,omitempty"`
+	// SessionID is an internal override for synthetic turns (for example a
+	// scheduled task). It is never supplied by an IM adapter.
+	SessionID string         `json:"-"`
+	MediaURLs []string       `json:"media_urls,omitempty"`
+	Media     []InboundMedia `json:"media,omitempty"`
+	Raw       any            `json:"-"`
 }
 
 // InboundMedia is a platform-downloaded attachment/image delivered with an
@@ -72,6 +76,7 @@ func (m InboundMessage) Session() SessionSource {
 		ChatID:       m.ChatID,
 		UserID:       m.UserID,
 		ThreadID:     m.ThreadID,
+		SessionID:    m.SessionID,
 	}
 }
 

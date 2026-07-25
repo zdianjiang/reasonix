@@ -83,6 +83,18 @@ func TestBuildSessionKey(t *testing.T) {
 	}
 }
 
+func TestBuildSessionKeyScheduledTaskIsIndependent(t *testing.T) {
+	base := SessionSource{Platform: PlatformFeishu, ConnectionID: "feishu", ChatType: ChatGroup, ChatID: "group", UserID: "user"}
+	task := base
+	task.SessionID = "task:daily-report"
+	if BuildSessionKey(base) == BuildSessionKey(task) {
+		t.Fatal("scheduled task must not share the interactive chat session")
+	}
+	if BuildSessionKey(task) != BuildSessionKey(task) {
+		t.Fatal("scheduled task session key must be stable")
+	}
+}
+
 func TestIsSlashBypass(t *testing.T) {
 	tests := []struct {
 		text   string
@@ -97,6 +109,7 @@ func TestIsSlashBypass(t *testing.T) {
 		{"/yolo", true},
 		{"/yolo on", true},
 		{"/mode yolo", true},
+		{"/schedule list", true},
 		{"/status", true},
 		{"/help", true},
 		{"hello", false},

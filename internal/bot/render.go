@@ -307,6 +307,13 @@ func (s *renderSink) Emit(e event.Event) {
 }
 
 func (s *renderSink) flush() {
+	// Final flushes should preserve a complete short reply as one platform
+	// message. Splitting at every punctuation mark makes a delayed final emoji
+	// (or "✅") look like a separate Bot response in Feishu and other IMs.
+	if len([]rune(s.buf.String())) <= renderMaxChunkRunes {
+		s.flushPrefix(len(s.buf.String()))
+		return
+	}
 	for strings.TrimSpace(s.buf.String()) != "" {
 		idx := renderFlushIndex(s.buf.String(), renderSoftFlushAfter)
 		if idx <= 0 {

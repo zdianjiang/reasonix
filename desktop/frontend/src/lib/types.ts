@@ -1068,6 +1068,7 @@ export interface FeishuBotView {
   appSecretEnv: string;
   secretSet: boolean;
   verificationToken: string;
+  postTitle: string;
   mode: string;
   webhookPort: number;
   requireMention: boolean;

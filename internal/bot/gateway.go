@@ -14,6 +14,7 @@ import (
 
 	"reasonix/internal/agent"
 	"reasonix/internal/boot"
+	scheduler "reasonix/internal/schedule"
 	"reasonix/internal/config"
 	"reasonix/internal/control"
 	"reasonix/internal/event"
@@ -148,10 +149,11 @@ type AdapterHealthSnapshot struct {
 // BotGateway 是 reasonix bot 消息网关，管理 Controller 生命周期、session 并发、
 // 事件渲染和平台适配器。
 type BotGateway struct {
-	cfg      GatewayConfig
-	adapters []AdapterBinding
-	sessions *SessionManager
-	startErr []error
+	cfg       GatewayConfig
+	adapters  []AdapterBinding
+	sessions  *SessionManager
+	startErr  []error
+	scheduler *scheduler.Scheduler
 
 	mu                      sync.Mutex
 	controllers             map[string]*sessionState // session key -> active state
@@ -277,6 +279,7 @@ func NewGatewayWithAdapterBindings(cfg GatewayConfig, adapters []AdapterBinding,
 		sessionOverrides:        make(map[string]sessionRuntimeOverride),
 		logger:                  logger.With("component", "bot_gateway"),
 	}
+	gw.scheduler = scheduler.New(gw)
 	gw.buildAllowlist()
 	gw.buildSelfUserIDs()
 	for _, binding := range gw.adapters {
@@ -376,6 +379,8 @@ func (gw *BotGateway) Start(ctx context.Context) error {
 	for _, binding := range gw.adapters {
 		go gw.dispatchLoop(ctx, binding)
 	}
+
+	gw.scheduler.Start()
 
 	return nil
 }
@@ -526,6 +531,9 @@ func (gw *BotGateway) Stop() {
 			gw.logger.Warn("error stopping adapter", "platform", binding.Platform, "connection", binding.ID, "err", err)
 		}
 		gw.markAdapterClosed(binding)
+	}
+	if gw.scheduler != nil {
+		gw.scheduler.Stop()
 	}
 	gw.stopControlServer()
 }
@@ -1289,6 +1297,9 @@ func (gw *BotGateway) handleSlashCommand(ctx context.Context, adapter Adapter, k
 		}
 		_ = gw.sendText(ctx, adapter, msg, gw.handleProjectSearchCommand(ctx, msg.Text))
 
+	case slashCommandVerb(msg.Text) == "/schedule":
+		gw.handleScheduleCommand(ctx, adapter, msg)
+
 	case strings.HasPrefix(msg.Text, "/status"):
 		active := gw.sessions.ActiveCount()
 		pending := gw.sessions.PendingCount(key)
@@ -1314,6 +1325,10 @@ func (gw *BotGateway) handleSlashCommand(ctx context.Context, adapter Adapter, k
 			"/sessions search <关键词> - 搜索可 attach 的历史会话\n" +
 			"/attach session <id|关键词> - 绑定当前远端会话到已有历史会话\n" +
 			"/search all <关键词> - 跨已索引项目检索文件内容\n" +
+			"/schedule list - 查看当前聊天的定时任务\n" +
+			"/schedule delete|cancel <id> - 删除任务\n" +
+			"/schedule pause <id> - 暂停任务\n" +
+			"/schedule resume <id> - 恢复任务（创建者或管理员）\n" +
 			"/status - 查看状态\n" +
 			"/help - 显示帮助"
 		_ = gw.sendText(ctx, adapter, msg, help)
@@ -1670,6 +1685,14 @@ func toolApprovalModeLabel(mode string) string {
 
 func (gw *BotGateway) runTurn(ctx context.Context, adapter Adapter, key string, msg InboundMessage, cleanup func()) {
 	gw.logger.Info("bot turn started", "platform", msg.Platform, "chat_type", msg.ChatType, "chat", hashID(msg.ChatID), "session", key[:8])
+	if err := gw.runTurnWithLifecycle(ctx, adapter, key, msg, cleanup); err != nil {
+		gw.logger.Warn("turn error", "session", key[:8], "err", err)
+		return
+	}
+	gw.logger.Info("bot turn completed", "platform", msg.Platform, "chat_type", msg.ChatType, "chat", hashID(msg.ChatID), "session", key[:8])
+}
+
+func (gw *BotGateway) runTurnWithLifecycle(ctx context.Context, adapter Adapter, key string, msg InboundMessage, cleanup func()) error {
 	defer func() {
 		// 检查是否有等待队列中的消息
 		next := gw.sessions.Release(key)
@@ -1684,12 +1707,15 @@ func (gw *BotGateway) runTurn(ctx context.Context, adapter Adapter, key string, 
 		}
 		gw.flushReactionCleanups(key, cleanup)
 	}()
+	return gw.executeTurn(ctx, adapter, key, msg)
+}
 
+func (gw *BotGateway) executeTurn(ctx context.Context, adapter Adapter, key string, msg InboundMessage) error {
 	// 获取或创建 Controller
 	state := gw.getOrCreateSession(ctx, key, msg)
 	if state == nil || state.ctrl == nil {
 		_ = gw.sendText(ctx, adapter, msg, "内部错误：无法创建会话。")
-		return
+		return fmt.Errorf("could not create session")
 	}
 	gw.rememberSessionReady(msg, state.ctrl)
 
@@ -1744,6 +1770,22 @@ func (gw *BotGateway) runTurn(ctx context.Context, adapter Adapter, key string, 
 	turnCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Inject chat context and scheduler so tools like schedule_task can create
+	// recurring tasks bound to this conversation.
+	turnCtx = scheduler.WithChatContext(turnCtx, scheduler.ChatContext{
+		Platform:     string(msg.Platform),
+		ConnectionID: msg.ConnectionID,
+		Domain:       msg.Domain,
+		ChatType:     string(msg.ChatType),
+		ChatID:       msg.ChatID,
+		UserID:       msg.UserID,
+		ThreadID:     msg.ThreadID,
+		Scheduled:    strings.HasPrefix(msg.MessageID, "scheduled:"),
+	})
+	if gw.scheduler != nil {
+		turnCtx = scheduler.WithScheduler(turnCtx, gw.scheduler)
+	}
+
 	gw.mu.Lock()
 	state.cancel = cancel
 	state.lastActive = time.Now()
@@ -1752,11 +1794,7 @@ func (gw *BotGateway) runTurn(ctx context.Context, adapter Adapter, key string, 
 	// 运行一轮对话
 	err := state.ctrl.RunTurn(turnCtx, input)
 	sink.Emit(event.Event{Kind: event.TurnDone, Err: err})
-	if err != nil {
-		gw.logger.Warn("turn error", "session", key[:8], "err", err)
-		return
-	}
-	gw.logger.Info("bot turn completed", "platform", msg.Platform, "chat_type", msg.ChatType, "chat", hashID(msg.ChatID), "session", key[:8])
+	return err
 }
 
 func (gw *BotGateway) inputTextWithMedia(ctx context.Context, adapter Adapter, msg InboundMessage, state *sessionState) string {
