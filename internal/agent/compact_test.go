@@ -824,3 +824,37 @@ func TestSummarizeToolArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestMaybeCompactBeforeRequestUsesCalibratedUsage(t *testing.T) {
+	big := strings.Repeat("old tool work ", 900)
+	sess := &Session{Messages: []provider.Message{
+		{Role: provider.RoleSystem, Content: "sys"},
+		{Role: provider.RoleUser, Content: "small task"},
+		{Role: provider.RoleAssistant, Content: big},
+		{Role: provider.RoleUser, Content: "continue"},
+		{Role: provider.RoleAssistant, Content: "ok"},
+	}}
+	prov := &fakeProvider{reply: "preflight digest"}
+	a := New(prov, tool.NewRegistry(), sess, Options{
+		ContextWindow: 10_000,
+		RecentKeep:    2,
+		ArchiveDir:    t.TempDir(),
+	}, event.Discard)
+
+	// Model telemetry says the previous request was just under the threshold;
+	// the fixed reserve means the same-sized next request must compact before it
+	// is sent, even though no new provider response can report that fact yet.
+	a.lastUsage.Store(&provider.Usage{PromptTokens: 7_950})
+	a.lastPromptChars.Store(int64(charsOfMessages(sess.Messages)))
+	a.maybeCompactBeforeRequest(context.Background())
+
+	if len(prov.got) == 0 {
+		t.Fatal("preflight did not call the summarizer")
+	}
+	if a.session.RewriteVersion() == 0 {
+		t.Fatal("preflight did not rewrite the session")
+	}
+	if !strings.Contains(a.session.Messages[2].Content, "preflight digest") {
+		t.Fatalf("preflight summary missing: %+v", a.session.Messages)
+	}
+}

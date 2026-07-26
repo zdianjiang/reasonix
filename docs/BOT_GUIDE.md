@@ -108,6 +108,14 @@ For webhook mode, configure a verification token. Incoming webhook events are
 verified fail-closed: an empty or missing configured token rejects callers
 instead of silently opening the webhook.
 
+Feishu/Lark Bot custom command menus are accepted. Configure each menu item's
+event key as either a Reasonix slash command, such as `/help` or `/status`, or
+`cmd:<slash command>`, such as `cmd:/yolo status`. If the platform UI restricts
+characters, use `slash_yolo_status` or `cmd_schedule_list`; underscores after
+the prefix become spaces. Because the platform's bot menu event does not include
+the current chat ID, Reasonix handles menu clicks as a private user-scoped
+session and replies to the operator by `open_id`.
+
 ### WeChat
 
 1. In **Settings -> Bots -> Add IM Bot**, choose **WeChat**.

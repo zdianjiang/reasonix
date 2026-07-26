@@ -331,7 +331,7 @@ func (s *renderSink) flushPrefix(idx int) {
 	if idx <= 0 || idx > len(raw) {
 		idx = len(raw)
 	}
-	text := strings.TrimSpace(raw[:idx])
+	text := normalizeOutboundReplyText(raw[:idx])
 	if text == "" {
 		remaining := raw[idx:]
 		s.buf.Reset()
@@ -502,7 +502,7 @@ func (s *renderSink) sendReplyPayload(payload ReplyPayload) error {
 			ChatType:      s.chatType,
 			WorkspaceRoot: s.workspaceRoot,
 			ReplyToMsgID:  s.replyTo,
-			Text:          strings.TrimSpace(seg.Text),
+			Text:          normalizeOutboundReplyText(seg.Text),
 			Attachment:    seg.Attachment,
 		}
 		if msg.Text == "" && msg.Attachment == nil {
@@ -513,6 +513,49 @@ func (s *renderSink) sendReplyPayload(payload ReplyPayload) error {
 		}
 	}
 	return nil
+}
+
+func normalizeOutboundReplyText(text string) string {
+	text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
+	for {
+		lines := strings.Split(text, "\n")
+		if len(lines) < 2 {
+			return text
+		}
+		last := strings.TrimSpace(lines[len(lines)-1])
+		prev := strings.TrimRight(lines[len(lines)-2], " \t")
+		if last == "" || prev == "" || !isTrailingDecorationLine(last) {
+			return text
+		}
+		// Providers often stream a final emoji/check mark as its own paragraph
+		// on later turns (because the task session has prior examples). In IMs
+		// that looks like a separate Bot message/paragraph. Keep decorative
+		// trailing symbols attached to the sentence they decorate.
+		lines[len(lines)-2] = prev + last
+		text = strings.Join(lines[:len(lines)-1], "\n")
+	}
+}
+
+func isTrailingDecorationLine(text string) bool {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) == 0 || len(runes) > 6 {
+		return false
+	}
+	hasSymbol := false
+	for _, r := range runes {
+		if unicode.IsSpace(r) || r == '\u200d' || r == '\ufe0f' {
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsPunct(r) {
+			return false
+		}
+		if unicode.IsSymbol(r) || unicode.IsMark(r) {
+			hasSymbol = true
+			continue
+		}
+		return false
+	}
+	return hasSymbol
 }
 
 func approvalKeyboard(id string) *InlineKeyboard {

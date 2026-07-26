@@ -79,6 +79,27 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("%s: status %d: %s", e.Provider, e.Status, e.Body)
 }
 
+// IsContextLimitError reports the OpenAI-compatible 400/422 variants that mean
+// the submitted prompt is too large for the selected model. Providers do not
+// share one error code, so this deliberately keys off the stable human phrases
+// used by DeepSeek, OpenAI-compatible gateways, and Anthropic proxies.
+func IsContextLimitError(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || (apiErr.Status != http.StatusBadRequest && apiErr.Status != http.StatusUnprocessableEntity) {
+		return false
+	}
+	body := strings.ToLower(apiErr.Body)
+	for _, marker := range []string{
+		"token limit", "maximum context", "context length", "context window",
+		"too many tokens", "exceeded model token",
+	} {
+		if strings.Contains(body, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // RetryableStatus reports whether a backoff can plausibly recover from status s:
 // 408 (request timeout), 429 (rate limit) and 5xx (incl. Anthropic's 529). Other
 // 4xx (400/401/402/422, …) are caller/config problems retrying can't fix.

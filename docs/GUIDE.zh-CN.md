@@ -497,6 +497,7 @@ headers = { Authorization = "Bearer ${STRIPE_KEY}" }
 
 交互式 `reasonix` 会话里，内置命令（`/compact`、`/new`、`/clear`、`/rewind`、`/tree`、`/branch`、`/switch`、`/todo`、`/model`、`/mcp`、`/skills`、`/hooks`、`/memory`、`/memory-v5`、`/goal`、`/output-style`、`/sandbox`、`/language`、`/auto-plan`、`/reasoning-language`、`/help`）在本地执行——`/help` 可列出全部。
 `/new` 会开启新会话，同时保存之前的 transcript 供历史记录和恢复使用；`/clear` 会二次确认，确认后丢弃当前上下文且不保存。
+`/compact [重点]` 会把较早的工作和工具输出归纳为摘要、保留最近上下文；建议在状态条接近压缩阈值前主动运行，例如 `/compact 保留已修改文件、测试结果和下一步`。需要尝试另一条路线时，用 `/branch [name]` 从当前末端复制会话（或 `/branch <turn> [name]` 从 checkpoint 分支），然后 `/switch <id|name>` 继续；原分支和完整归档都保留，不会丢失上下文。
 `/tree` 查看已保存的对话分支，`/branch [name]` 从当前对话末端分支，`/branch <turn> [name]`
 从较早的 checkpoint 轮次分支，`/switch <id|name>` 切换到另一个分支。**自定义命令**
 是放在 `.reasonix/commands/`（项目）或 `~/.reasonix/commands/`（用户）下的 Markdown 文件——

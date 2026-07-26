@@ -228,6 +228,91 @@ func TestHandleCardActionDoesNotTrustCardRequesterAsOperator(t *testing.T) {
 	}
 }
 
+func TestHandleBotMenuMapsEventKeyToSlashCommandDM(t *testing.T) {
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		msgCh:  make(chan bot.InboundMessage, 1),
+		seen:   make(map[string]bool),
+	}
+	menu := feishuBotMenuEvent{EventKey: "cmd:/yolo status", Timestamp: 123}
+	menu.Operator.OperatorName = "Alice"
+	menu.Operator.OperatorID.OpenID = "ou_123"
+
+	if !a.handleBotMenu("evt-menu-1", menu) {
+		t.Fatal("handleBotMenu returned false")
+	}
+
+	msg := <-a.msgCh
+	if msg.Text != "/yolo status" {
+		t.Fatalf("text = %q, want /yolo status", msg.Text)
+	}
+	if msg.ChatType != bot.ChatDM {
+		t.Fatalf("chat type = %q, want dm", msg.ChatType)
+	}
+	if msg.ChatID != "open_id:ou_123" {
+		t.Fatalf("chat id = %q, want open_id:ou_123", msg.ChatID)
+	}
+	if msg.UserID != "ou_123" || msg.OperatorID != "ou_123" || msg.UserName != "Alice" {
+		t.Fatalf("operator fields = user %q operator %q name %q", msg.UserID, msg.OperatorID, msg.UserName)
+	}
+}
+
+func TestHandleWSEventQueuesBotMenuEvent(t *testing.T) {
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		msgCh:  make(chan bot.InboundMessage, 1),
+		seen:   make(map[string]bool),
+	}
+	raw := json.RawMessage(`{
+		"header": {"event_id": "evt-menu-webhook", "event_type": "application.bot.menu_v6"},
+		"event": {
+			"operator": {
+				"operator_name": "Bob",
+				"operator_id": {"open_id": "ou_webhook"}
+			},
+			"event_key": "help",
+			"timestamp": 456
+		}
+	}`)
+
+	a.handleWSEvent(context.Background(), raw)
+
+	msg := <-a.msgCh
+	if msg.Text != "/help" {
+		t.Fatalf("text = %q, want /help", msg.Text)
+	}
+	if msg.MessageID != "bot-menu-456" {
+		t.Fatalf("message id = %q, want synthetic timestamp id", msg.MessageID)
+	}
+}
+
+func TestFeishuSendReceiveIDSupportsBotMenuOpenID(t *testing.T) {
+	typ, id := feishuSendReceiveID("open_id:ou_123")
+	if typ != larkim.CreateMessageV1ReceiveIDTypeOpenId || id != "ou_123" {
+		t.Fatalf("receive target = %q/%q, want open_id/ou_123", typ, id)
+	}
+	typ, id = feishuSendReceiveID("oc_chat")
+	if typ != larkim.CreateMessageV1ReceiveIDTypeChatId || id != "oc_chat" {
+		t.Fatalf("receive target = %q/%q, want chat_id/oc_chat", typ, id)
+	}
+}
+
+func TestFeishuMenuCommandSupportsSafeEventKeys(t *testing.T) {
+	cases := map[string]string{
+		"help":                "/help",
+		"slash_yolo_status":   "/yolo status",
+		"cmd_schedule_list":   "/schedule list",
+		"cmd:/use project p1": "/use project p1",
+		"/queue status":       "/queue status",
+		"unknown_menu_action": "",
+	}
+	for input, want := range cases {
+		if got := feishuMenuCommand(input); got != want {
+			t.Fatalf("feishuMenuCommand(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestHandleMessageAcceptsPostWithMention(t *testing.T) {
 	a := &adapter{
 		cfg:    config.FeishuBotConfig{RequireMention: true},
@@ -481,6 +566,97 @@ func TestSendMessageKeepsPathLikeTextLiteral(t *testing.T) {
 	}
 	if !strings.Contains(gotContent, "@erp/report.txt") || !strings.Contains(gotContent, "@erp/shot.png") {
 		t.Fatalf("content = %q, want path-like reply text preserved", gotContent)
+	}
+}
+
+func TestSendMessageRepliesToInboundMessage(t *testing.T) {
+	var (
+		called  bool
+		gotMsg  bot.OutboundMessage
+		gotType string
+	)
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		replyContent: func(_ context.Context, msg bot.OutboundMessage, msgType, _ string) (bot.SendResult, error) {
+			called = true
+			gotMsg = msg
+			gotType = msgType
+			return bot.SendResult{MessageID: "reply-1"}, nil
+		},
+		sendContent: func(_ context.Context, _ bot.OutboundMessage, _, _ string) (bot.SendResult, error) {
+			t.Fatal("must use the Feishu Reply API when ReplyToMsgID is supplied")
+			return bot.SendResult{}, nil
+		},
+	}
+
+	result, err := a.sendMessage(context.Background(), bot.OutboundMessage{
+		ChatID:       "oc_group",
+		ChatType:     bot.ChatGroup,
+		Text:         "已处理",
+		ReplyToMsgID: "om_inbound",
+	})
+	if err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+	if !called {
+		t.Fatal("Reply API was not called")
+	}
+	if gotMsg.ReplyToMsgID != "om_inbound" {
+		t.Fatalf("reply target = %q, want om_inbound", gotMsg.ReplyToMsgID)
+	}
+	if gotType != larkim.MsgTypeInteractive {
+		t.Fatalf("message type = %q, want interactive", gotType)
+	}
+	if result.MessageID != "reply-1" {
+		t.Fatalf("result message ID = %q, want reply-1", result.MessageID)
+	}
+}
+
+func TestSendMessageWithoutReplyTargetCreatesMessage(t *testing.T) {
+	var created bool
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sendContent: func(_ context.Context, _ bot.OutboundMessage, _, _ string) (bot.SendResult, error) {
+			created = true
+			return bot.SendResult{MessageID: "created-1"}, nil
+		},
+		replyContent: func(_ context.Context, _ bot.OutboundMessage, _, _ string) (bot.SendResult, error) {
+			t.Fatal("must not use Reply API without ReplyToMsgID")
+			return bot.SendResult{}, nil
+		},
+	}
+
+	if _, err := a.sendMessage(context.Background(), bot.OutboundMessage{ChatID: "oc_group", Text: "主动通知"}); err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+	if !created {
+		t.Fatal("Create API was not called")
+	}
+}
+
+func TestSendMessageForBotMenuOpenIDCreatesMessage(t *testing.T) {
+	var created bool
+	a := &adapter{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		sendContent: func(_ context.Context, _ bot.OutboundMessage, _, _ string) (bot.SendResult, error) {
+			created = true
+			return bot.SendResult{MessageID: "created-1"}, nil
+		},
+		replyContent: func(_ context.Context, _ bot.OutboundMessage, _, _ string) (bot.SendResult, error) {
+			t.Fatal("bot menu events do not have a real message to reply to")
+			return bot.SendResult{}, nil
+		},
+	}
+
+	if _, err := a.sendMessage(context.Background(), bot.OutboundMessage{
+		ChatID:       feishuOpenIDChat("ou_123"),
+		Text:         "菜单结果",
+		ReplyToMsgID: "bot-menu-123",
+	}); err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+	if !created {
+		t.Fatal("Create API was not called for a bot menu event")
 	}
 }
 

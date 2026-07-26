@@ -29,6 +29,26 @@ func newDummyReq(ctx context.Context) (*http.Request, error) {
 	return http.NewRequestWithContext(ctx, http.MethodPost, "http://x/y", nil)
 }
 
+func TestIsContextLimitError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"deepseek token limit", &APIError{Status: 400, Body: `{"error":{"message":"Invalid request: Your request exceeded model token limit: 262144"}}`}, true},
+		{"openai context length", &APIError{Status: 400, Body: "This model's maximum context length is 128000 tokens."}, true},
+		{"ordinary bad request", &APIError{Status: 400, Body: "the message role is invalid"}, false},
+		{"non-api error", errors.New("maximum context length"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsContextLimitError(tc.err); got != tc.want {
+				t.Fatalf("IsContextLimitError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRetryableStatus(t *testing.T) {
 	for _, s := range []int{408, 429, 500, 502, 503, 504, 529, 599} {
 		if !RetryableStatus(s) {

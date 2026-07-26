@@ -138,6 +138,29 @@ func TestNormalizeSessionMessagesPreservesExtraToolResult(t *testing.T) {
 	}
 }
 
+func TestNormalizeMessagesDropsEmptyAssistantTurnOnWire(t *testing.T) {
+	in := []Message{
+		{Role: RoleUser, Content: "question"},
+		{Role: RoleAssistant, ReasoningContent: "internal-only reasoning"},
+		{Role: RoleUser, Content: "please answer visibly"},
+	}
+	out := NormalizeMessages(in)
+	if len(out) != 2 {
+		t.Fatalf("messages = %+v, want empty assistant dropped", out)
+	}
+	for _, m := range out {
+		if isEmptyAssistantTurn(m) {
+			t.Fatalf("invalid empty assistant survived: %+v", out)
+		}
+	}
+	// The session variant preserves local reasoning-only display history; every
+	// provider send still applies the wire sanitizer above.
+	persisted := NormalizeSessionMessages(in)
+	if len(persisted) != len(in) || !isEmptyAssistantTurn(persisted[1]) {
+		t.Fatalf("session normalization should preserve local empty turn: %+v", persisted)
+	}
+}
+
 func TestSanitizeToolPairingClosesTruncatedArgs(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{`{`, `{}`},

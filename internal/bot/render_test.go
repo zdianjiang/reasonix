@@ -166,6 +166,19 @@ func TestRenderSinkFinalFlushKeepsTrailingEmojiWithReply(t *testing.T) {
 	}
 }
 
+func TestRenderSinkMergesTrailingDecorationLine(t *testing.T) {
+	adapter := newFakeAdapter(PlatformFeishu, "fake-feishu")
+	sink := newRenderSink(context.Background(), adapter, "feishu-feishu", "feishu", "chat-1", ChatDM, "user-1", "", "msg-1", slog.New(slog.NewTextHandler(io.Discard, nil)), renderObservability{}, nil, nil)
+	sink.Emit(event.Event{Kind: event.Text, Text: "为什么数学书总是很忧郁？——因为它有太多的问题（problem）了。\n"})
+	sink.Emit(event.Event{Kind: event.Text, Text: "😄"})
+	sink.Emit(event.Event{Kind: event.TurnDone})
+
+	sent := adapter.sentMessages()
+	if len(sent) != 1 || sent[0].Text != "为什么数学书总是很忧郁？——因为它有太多的问题（problem）了。😄" {
+		t.Fatalf("sent = %+v, want trailing emoji merged into reply", sent)
+	}
+}
+
 func TestRenderSinkFinalFlushKeepsChunkLimit(t *testing.T) {
 	adapter := newFakeAdapter(PlatformWeixin, "fake-weixin")
 	sink := newRenderSink(context.Background(), adapter, "weixin-weixin", "weixin", "chat-1", ChatDM, "user-1", "", "msg-1", slog.New(slog.NewTextHandler(io.Discard, nil)), renderObservability{}, nil, nil)

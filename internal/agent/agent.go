@@ -38,6 +38,7 @@ const maxToolOutputBytes = 32 * 1024
 const maxFinalReadinessBlocks = 3
 const maxEmptyFinalBlocks = 3
 const maxStreamRecoveries = 3
+const maxContextLimitRecoveries = 1
 const maxExecutorHandoffNudges = 1
 const memoryCompilerInjectionMax = 5
 const memoryCompilerInjectionCooldown = 30 * time.Second
@@ -245,6 +246,11 @@ type Agent struct {
 	// the CLI can expose a context gauge without re-scraping the usage line. The
 	// run loop writes it while a frontend's status line reads it, so it is atomic.
 	lastUsage atomic.Pointer[provider.Usage]
+	// lastPromptChars is the message-character count for lastUsage's request.
+	// Keeping the pair lets the next turn estimate its prompt before asking the
+	// provider, rather than discovering an over-limit request only after it has
+	// been rejected. It intentionally excludes reasoning, matching the wire form.
+	lastPromptChars atomic.Int64
 
 	// sessCacheHit/sessCacheMiss accumulate cache tokens across every API call
 	// this session, so frontends can show the aggregate hit-rate (Σhit/Σ(hit+miss))
@@ -1098,6 +1104,7 @@ func (a *Agent) Run(ctx context.Context, input string) (runErr error) {
 	handoffNudges := 0
 	usedAnyTool := false
 	streamRecoveries := 0
+	contextLimitRecoveries := 0
 	graceRound := false
 	executorHandoff := a.executorHandoffGuard && strings.Contains(input, executorHandoffMarker)
 	for step := 0; a.maxSteps <= 0 || step < a.maxSteps || graceRound; step++ {
@@ -1109,6 +1116,10 @@ func (a *Agent) Run(ctx context.Context, input string) (runErr error) {
 			a.session.Add(provider.Message{Role: provider.RoleUser, Content: a.withTurnPreferences(midTurnSteerMessage(text))})
 			a.sink.Emit(event.Event{Kind: event.Steer, Text: text})
 		}
+		// The last usage arrives after a request, while tool results and the next
+		// user input arrive before the following one.  Compact here as a preflight
+		// so that growth between turns cannot cross the provider hard limit.
+		a.maybeCompactBeforeRequest(ctx)
 		schemas := a.tools.Schemas()
 		prefixShape := a.capturePrefixShape(schemas)
 		prevPrefixShape := a.lastPrefixShape
@@ -1118,6 +1129,18 @@ func (a *Agent) Run(ctx context.Context, input string) (runErr error) {
 
 		text, reasoning, signature, calls, usage, interrupted, partialToolStarted, err := a.stream(ctx, step+1)
 		if err != nil {
+			// A preflight estimate cannot account for every provider tokenizer or
+			// gateway-added schema. If one still rejects the prompt, fold once and
+			// retry the *same* turn instead of dropping the conversation on a 400.
+			if provider.IsContextLimitError(err) && contextLimitRecoveries < maxContextLimitRecoveries {
+				before := a.session.RewriteVersion()
+				if compactErr := a.compact(ctx, "overflow-recovery", "", true); compactErr == nil && a.session.RewriteVersion() > before {
+					contextLimitRecoveries++
+					a.sink.Emit(event.Event{Kind: event.Notice, Level: event.LevelInfo, Text: "Model context limit reached; compacted and retrying the turn."})
+					step-- // the rejected request did not perform any work
+					continue
+				}
+			}
 			if interrupted && streamRecoveries < maxStreamRecoveries {
 				streamRecoveries++
 				if hasVisibleFinalAnswer(text) {
@@ -1823,8 +1846,13 @@ func (a *Agent) stream(ctx context.Context, turn int) (string, string, string, [
 	ctx = provider.WithRetryNotify(ctx, func(info provider.RetryInfo) {
 		a.sink.Emit(event.Event{Kind: event.Retrying, RetryAttempt: info.Attempt, RetryMax: info.Max})
 	})
+	// Capture the exact message shape paired with the next Usage report. The
+	// provider also adds stable schemas/framing, so measuring this once against
+	// real usage calibrates the preflight estimate without a local tokenizer.
+	requestMessages := provider.SanitizeToolPairing(a.session.Messages)
+	requestChars := int64(charsOfMessages(requestMessages))
 	ch, err := a.prov.Stream(ctx, provider.Request{
-		Messages:    a.session.Messages,
+		Messages:    requestMessages,
 		Tools:       a.tools.Schemas(),
 		Temperature: provider.OptionalTemperature(a.temperature),
 	})
@@ -1912,6 +1940,7 @@ func (a *Agent) stream(ctx context.Context, turn int) (string, string, string, [
 		case provider.ChunkUsage:
 			usage = chunk.Usage
 			a.lastUsage.Store(chunk.Usage)
+			a.lastPromptChars.Store(requestChars)
 			a.sessCacheHit.Add(int64(chunk.Usage.CacheHitTokens))
 			a.sessCacheMiss.Add(int64(chunk.Usage.CacheMissTokens))
 		case provider.ChunkError:

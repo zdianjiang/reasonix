@@ -31,6 +31,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
+	larkapplication "github.com/larksuite/oapi-sdk-go/v3/service/application/v6"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 )
@@ -100,6 +101,19 @@ type feishuMsgEvent struct {
 	Mentions  []feishuMention `json:"mentions"`
 }
 
+type feishuBotMenuEvent struct {
+	Operator struct {
+		OperatorName string `json:"operator_name"`
+		OperatorID   struct {
+			UserID  string `json:"user_id"`
+			OpenID  string `json:"open_id"`
+			UnionID string `json:"union_id"`
+		} `json:"operator_id"`
+	} `json:"operator"`
+	EventKey  string `json:"event_key"`
+	Timestamp int64  `json:"timestamp"`
+}
+
 type feishuSender struct {
 	SenderID struct {
 		UserID  string `json:"user_id"`
@@ -117,16 +131,17 @@ type feishuMention struct {
 
 // adapter 飞书适配器实现。
 type adapter struct {
-	cfg         config.FeishuBotConfig
-	logger      *slog.Logger
-	msgCh       chan bot.InboundMessage
-	cancel      context.CancelFunc
-	client      *lark.Client
-	wsClient    *larkws.Client
-	download    func(context.Context, string, string, string) (bot.InboundMedia, error)
-	sendContent func(context.Context, bot.OutboundMessage, string, string) (bot.SendResult, error)
-	uploadImage func(context.Context, []byte) (string, error)
-	uploadFile  func(context.Context, string, []byte) (string, error)
+	cfg          config.FeishuBotConfig
+	logger       *slog.Logger
+	msgCh        chan bot.InboundMessage
+	cancel       context.CancelFunc
+	client       *lark.Client
+	wsClient     *larkws.Client
+	download     func(context.Context, string, string, string) (bot.InboundMedia, error)
+	sendContent  func(context.Context, bot.OutboundMessage, string, string) (bot.SendResult, error)
+	replyContent func(context.Context, bot.OutboundMessage, string, string) (bot.SendResult, error)
+	uploadImage  func(context.Context, []byte) (string, error)
+	uploadFile   func(context.Context, string, []byte) (string, error)
 
 	seenMu sync.Mutex
 	seen   map[string]bool // 消息去重
@@ -261,6 +276,10 @@ func (a *adapter) newEventDispatcher() *dispatcher.EventDispatcher {
 				return cardActionToast("warning", "操作无效或已过期"), nil
 			}
 			return cardActionToast("success", "操作已提交"), nil
+		}).
+		OnP2BotMenuV6(func(ctx context.Context, event *larkapplication.P2BotMenuV6) error {
+			a.handleSDKBotMenu(event)
+			return nil
 		})
 }
 
@@ -341,7 +360,142 @@ func (a *adapter) handleWSEvent(ctx context.Context, raw json.RawMessage) {
 			return
 		}
 		a.handleMessage(msg)
+	case "application.bot.menu_v6":
+		var menu feishuBotMenuEvent
+		if err := json.Unmarshal(evt.Event, &menu); err != nil {
+			return
+		}
+		// handleWSEvent already deduped evt.Header.EventID above.
+		a.handleBotMenu("", menu)
 	}
+}
+
+func (a *adapter) handleSDKBotMenu(event *larkapplication.P2BotMenuV6) {
+	if event == nil || event.Event == nil {
+		return
+	}
+	eventID := ""
+	if event.EventV2Base != nil && event.EventV2Base.Header != nil {
+		eventID = event.EventV2Base.Header.EventID
+	}
+	menu := feishuBotMenuEvent{}
+	if event.Event.EventKey != nil {
+		menu.EventKey = *event.Event.EventKey
+	}
+	if event.Event.Timestamp != nil {
+		menu.Timestamp = *event.Event.Timestamp
+	}
+	if event.Event.Operator != nil {
+		if event.Event.Operator.OperatorName != nil {
+			menu.Operator.OperatorName = *event.Event.Operator.OperatorName
+		}
+		if id := event.Event.Operator.OperatorId; id != nil {
+			if id.OpenId != nil {
+				menu.Operator.OperatorID.OpenID = *id.OpenId
+			}
+			if id.UnionId != nil {
+				menu.Operator.OperatorID.UnionID = *id.UnionId
+			}
+			if id.UserId != nil {
+				menu.Operator.OperatorID.UserID = *id.UserId
+			}
+		}
+	}
+	a.handleBotMenu(eventID, menu)
+}
+
+func (a *adapter) handleBotMenu(eventID string, menu feishuBotMenuEvent) bool {
+	command := feishuMenuCommand(menu.EventKey)
+	operatorID := firstNonEmpty(menu.Operator.OperatorID.OpenID, menu.Operator.OperatorID.UnionID, menu.Operator.OperatorID.UserID)
+	if command == "" || operatorID == "" {
+		a.logger.Warn("feishu bot menu ignored", "reason", "missing_command_or_operator", "event_key", menu.EventKey)
+		return false
+	}
+	if a.markSeen(eventID) {
+		a.logger.Info("feishu bot menu deduped", "operator", logHash(operatorID), "command", command)
+		return true
+	}
+	// Bot menu events carry the operator and event_key but no open_chat_id.
+	// Route them as a private user-scoped session and send replies by open_id.
+	ib := bot.InboundMessage{
+		Platform:   bot.PlatformFeishu,
+		ChatType:   bot.ChatDM,
+		ChatID:     feishuOpenIDChat(operatorID),
+		UserID:     operatorID,
+		UserName:   firstNonEmpty(strings.TrimSpace(menu.Operator.OperatorName), operatorID),
+		OperatorID: operatorID,
+		Text:       command,
+		MessageID:  firstNonEmpty(eventID, fmt.Sprintf("bot-menu-%d", menu.Timestamp)),
+		Raw:        menu,
+	}
+	select {
+	case a.msgCh <- ib:
+		a.logger.Info("feishu bot menu queued", "operator", logHash(operatorID), "command", command)
+	default:
+		a.logger.Warn("feishu bot menu channel full", "operator", logHash(operatorID), "command", command)
+		return false
+	}
+	return true
+}
+
+func feishuMenuCommand(eventKey string) string {
+	key := strings.TrimSpace(eventKey)
+	if key == "" {
+		return ""
+	}
+	if strings.HasPrefix(key, "cmd:") {
+		key = strings.TrimSpace(strings.TrimPrefix(key, "cmd:"))
+	}
+	if strings.HasPrefix(key, "/") {
+		return key
+	}
+	lower := strings.ToLower(key)
+	if strings.HasPrefix(lower, "cmd_") || strings.HasPrefix(lower, "slash_") {
+		parts := strings.SplitN(key, "_", 2)
+		if len(parts) == 2 && strings.TrimSpace(parts[1]) != "" {
+			return "/" + strings.ReplaceAll(strings.TrimSpace(parts[1]), "_", " ")
+		}
+	}
+	switch lower {
+	case "help":
+		return "/help"
+	case "status":
+		return "/status"
+	case "new":
+		return "/new"
+	case "reset":
+		return "/reset"
+	case "stop":
+		return "/stop"
+	case "yolo_status":
+		return "/yolo status"
+	case "queue_status":
+		return "/queue status"
+	case "projects":
+		return "/projects"
+	case "schedule_list":
+		return "/schedule list"
+	default:
+		return ""
+	}
+}
+
+const feishuOpenIDChatPrefix = "open_id:"
+
+func feishuOpenIDChat(openID string) string {
+	openID = strings.TrimSpace(openID)
+	if openID == "" {
+		return ""
+	}
+	return feishuOpenIDChatPrefix + openID
+}
+
+func feishuSendReceiveID(chatID string) (receiveIDType string, receiveID string) {
+	chatID = strings.TrimSpace(chatID)
+	if openID := strings.TrimSpace(strings.TrimPrefix(chatID, feishuOpenIDChatPrefix)); strings.HasPrefix(chatID, feishuOpenIDChatPrefix) && openID != "" {
+		return larkim.CreateMessageV1ReceiveIDTypeOpenId, openID
+	}
+	return larkim.CreateMessageV1ReceiveIDTypeChatId, chatID
 }
 
 func truncateContentForLog(raw string, max int) string {
@@ -864,6 +1018,45 @@ func (a *adapter) downloadInboundResource(ctx context.Context, messageID, fileKe
 }
 
 func (a *adapter) sendSDKContent(ctx context.Context, msg bot.OutboundMessage, msgType, content string) (bot.SendResult, error) {
+	// The gateway preserves the inbound message ID in ReplyToMsgID.  Using the
+	// reply endpoint is essential here: Create posts a new, unrelated message
+	// in the chat, whereas Reply renders as a reply to the user's message.
+	// Menu events have no source message. They use an open_id pseudo-chat and a
+	// synthetic MessageID, so they must remain ordinary direct messages.
+	if replyTo := strings.TrimSpace(msg.ReplyToMsgID); replyTo != "" && !strings.HasPrefix(strings.TrimSpace(msg.ChatID), feishuOpenIDChatPrefix) {
+		if a.replyContent != nil {
+			return a.replyContent(ctx, msg, msgType, content)
+		}
+		client, err := a.sdkClient()
+		if err != nil {
+			return bot.SendResult{}, err
+		}
+		req := larkim.NewReplyMessageReqBuilder().
+			MessageId(replyTo).
+			Body(larkim.NewReplyMessageReqBodyBuilder().
+				MsgType(msgType).
+				Content(content).
+				// Keep the normal Feishu "Reply" behavior rather than explicitly
+				// creating a topic-thread response.
+				ReplyInThread(false).
+				Build()).
+			Build()
+		resp, err := client.Im.Message.Reply(ctx, req)
+		if err != nil {
+			return bot.SendResult{}, err
+		}
+		if resp == nil {
+			return bot.SendResult{}, fmt.Errorf("feishu reply error: empty response")
+		}
+		if !resp.Success() {
+			return bot.SendResult{}, fmt.Errorf("feishu reply error: %s", feishuCodeError(resp.Code, resp.Msg))
+		}
+		if resp.Data == nil {
+			return bot.SendResult{}, nil
+		}
+		return bot.SendResult{MessageID: stringPtrValue(resp.Data.MessageId)}, nil
+	}
+
 	if a.sendContent != nil {
 		return a.sendContent(ctx, msg, msgType, content)
 	}
@@ -875,9 +1068,10 @@ func (a *adapter) sendSDKContent(ctx context.Context, msg bot.OutboundMessage, m
 	if chatID == "" {
 		return bot.SendResult{}, fmt.Errorf("feishu chat_id is empty")
 	}
+	receiveIDType, receiveID := feishuSendReceiveID(chatID)
 	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(larkim.CreateMessageV1ReceiveIDTypeChatId).
-		Body(larkim.NewCreateMessageReqBodyBuilder().ReceiveId(chatID).MsgType(msgType).Content(content).Build()).
+		ReceiveIdType(receiveIDType).
+		Body(larkim.NewCreateMessageReqBodyBuilder().ReceiveId(receiveID).MsgType(msgType).Content(content).Build()).
 		Build()
 	resp, err := client.Im.Message.Create(ctx, req)
 	if err != nil {

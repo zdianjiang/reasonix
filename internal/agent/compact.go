@@ -33,6 +33,8 @@ const (
 	fallbackTokPerChar         = 0.25  // ~4 chars/token, used before any usage is available to calibrate
 	maxPinnedFirstUserTokens   = 1500  // ceiling on pinning the first user turn verbatim; larger first turns (pasted content) stay foldable
 	pinnedFirstUserWindowFrac  = 0.15  // and never pin a first turn worth more than this fraction of the window
+	preflightSafetyWindowFrac  = 0.02  // absorbs tokenizer/schema drift before a hard provider limit
+	preflightSafetyMinTokens   = 256
 )
 
 // summaryTag wraps the compaction summary so the model can distinguish it from
@@ -144,6 +146,42 @@ func (a *Agent) maybeCompact(ctx context.Context, u *provider.Usage) {
 			"context_window=%d is too small for compaction to help (the system prompt plus one turn already exceeds %.0f%% of it); raise context_window or shrink tool output. Auto-compaction paused until the prompt drops.",
 			a.contextWindow, a.compactRatio*100)})
 	}
+}
+
+// maybeCompactBeforeRequest estimates the request about to be sent using the
+// previous request's real token usage. Auto-compaction used to run only after a
+// successful response, leaving one unguarded gap: a new user turn, tool result,
+// or retry nudge could push an otherwise healthy session just over the model
+// window and make the whole conversation appear broken. A small safety reserve
+// covers tokenizer and tool-schema drift; normal cache-first behavior remains
+// unchanged until the estimate nears the configured threshold.
+func (a *Agent) maybeCompactBeforeRequest(ctx context.Context) {
+	if a.contextWindow <= 0 {
+		return
+	}
+	u := a.lastUsage.Load()
+	priorChars := a.lastPromptChars.Load()
+	if u == nil || u.PromptTokens <= 0 || priorChars <= 0 {
+		return // no calibrated provider usage yet
+	}
+	current := provider.SanitizeToolPairing(a.session.Messages)
+	currentChars := charsOfMessages(current)
+	if currentChars <= 0 {
+		return
+	}
+	estimated := int((int64(u.PromptTokens)*int64(currentChars) + priorChars - 1) / priorChars)
+	reserve := int(float64(a.contextWindow) * preflightSafetyWindowFrac)
+	if reserve < preflightSafetyMinTokens {
+		reserve = preflightSafetyMinTokens
+	}
+	if estimated+reserve < int(float64(a.contextWindow)*a.compactRatio) {
+		return
+	}
+	// Reuse the regular state machine (including its small-window stuck guard)
+	// rather than calling compact directly. projected naturally crosses the force
+	// ceiling when a hard-limit failure is plausible, but it cannot re-enable a
+	// cleanup loop which the regular path deliberately paused.
+	a.maybeCompact(ctx, &provider.Usage{PromptTokens: estimated + reserve})
 }
 
 // foldEconomics estimates whether compacting the given region saves enough
@@ -586,7 +624,7 @@ func tailStart(msgs []provider.Message, head, budgetTokens int, tokPerChar float
 // any usage is known, and ignores absurd ratios.
 func (a *Agent) tokPerChar() float64 {
 	if u := a.lastUsage.Load(); u != nil && u.PromptTokens > 0 {
-		if c := charsOfMessages(a.session.Messages); c > 0 {
+		if c := a.lastPromptChars.Load(); c > 0 {
 			if r := float64(u.PromptTokens) / float64(c); r > 0.05 && r < 2 {
 				return r
 			}

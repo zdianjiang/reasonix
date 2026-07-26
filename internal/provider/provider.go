@@ -168,6 +168,16 @@ func normalizeMessages(msgs []Message, dropOrphanTools bool) []Message {
 	out := make([]Message, 0, len(msgs))
 	for i := 0; i < len(msgs); {
 		m := msgs[i]
+		// A reasoning-only final response is useful in the local transcript, but
+		// it is not a valid OpenAI-compatible chat message on replay: providers
+		// reject an assistant message with neither content nor tool_calls. This
+		// commonly happens just before the agent's visible-answer retry. Drop it
+		// from wire histories, while preserving it in stored sessions for local
+		// transcript/debug display.
+		if dropOrphanTools && isEmptyAssistantTurn(m) {
+			i++
+			continue
+		}
 		if m.Role == RoleAssistant && len(m.ToolCalls) > 0 {
 			j := i + 1
 			for j < len(msgs) && msgs[j].Role == RoleTool {
@@ -209,6 +219,9 @@ func normalizeMessages(msgs []Message, dropOrphanTools bool) []Message {
 func tryNormalizeFastPath(msgs []Message, dropOrphanTools bool) ([]Message, bool) {
 	for i := 0; i < len(msgs); {
 		m := msgs[i]
+		if dropOrphanTools && isEmptyAssistantTurn(m) {
+			return nil, false
+		}
 		if m.Role == RoleAssistant && len(m.ToolCalls) > 0 {
 			j := i + 1
 			for j < len(msgs) && msgs[j].Role == RoleTool {
@@ -226,6 +239,13 @@ func tryNormalizeFastPath(msgs []Message, dropOrphanTools bool) ([]Message, bool
 		i++
 	}
 	return msgs, true
+}
+
+// isEmptyAssistantTurn identifies the invalid assistant shape that has neither
+// a visible reply nor a tool invocation. Whitespace is just as invalid as an
+// omitted string for the OpenAI-compatible endpoints we support.
+func isEmptyAssistantTurn(m Message) bool {
+	return m.Role == RoleAssistant && len(m.ToolCalls) == 0 && strings.TrimSpace(m.Content) == ""
 }
 
 func toolTurnWellFormed(calls []ToolCall, results []Message) bool {
