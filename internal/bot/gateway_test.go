@@ -1220,7 +1220,7 @@ func TestGatewayDefaultQueueSteersMediaOnlyActiveTurn(t *testing.T) {
 	gw.handleMessage(context.Background(), AdapterBinding{ID: "feishu-feishu", Platform: PlatformFeishu, Adapter: adapter}, msg)
 
 	got := ctrl.steered()
-	if len(got) != 1 || !strings.Contains(got[0], "Attachments:") || !strings.Contains(got[0], "@.reasonix/attachments/") {
+	if len(got) != 1 || !strings.Contains(got[0], "Attachments:") || !strings.Contains(got[0], "@.agents/attachments/") {
 		t.Fatalf("steers = %#v, want saved attachment reference", got)
 	}
 }
@@ -1255,7 +1255,7 @@ func TestGatewayDefaultQueueSteersInboundBlobOnlyActiveTurn(t *testing.T) {
 	gw.handleMessage(context.Background(), AdapterBinding{ID: "feishu-feishu", Platform: PlatformFeishu, Adapter: adapter}, msg)
 
 	got := ctrl.steered()
-	if len(got) != 1 || !strings.Contains(got[0], "Attachments:") || !strings.Contains(got[0], "@.reasonix/attachments/") || !strings.Contains(got[0], ".txt") {
+	if len(got) != 1 || !strings.Contains(got[0], "Attachments:") || !strings.Contains(got[0], "@.agents/attachments/") || !strings.Contains(got[0], ".txt") {
 		t.Fatalf("steers = %#v, want saved attachment reference", got)
 	}
 }

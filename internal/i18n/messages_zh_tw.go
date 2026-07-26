@@ -267,7 +267,7 @@ var ChineseTraditional = Messages{
 	ListSkillsHeaderFmt: "skills（%d 個）",
 	ListSkillsNone:      "暫無 skill — 呼叫內建的（如 /init），或用 install_skill 建立一個",
 	ListHooksHeaderFmt:  "hooks（生效 %d 個）",
-	ListHooksNone:       "無生效 hooks — 在 .reasonix/settings.json（專案，需信任後）或 ~/.reasonix/settings.json（全域）設定",
+	ListHooksNone:       "無生效 hooks — 在 .agents/settings.json（專案，需信任後）或 ~/.reasonix/settings.json（全域）設定",
 	ListMcpHeader:       "MCP 伺服器",
 	ListMcpNone:         "未連線 MCP 伺服器 — 在 reasonix.toml（[[plugins]]）或專案 .mcp.json 中新增",
 

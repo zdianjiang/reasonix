@@ -252,7 +252,7 @@ func TestApplyLocalSkillFileCopiesToProject(t *testing.T) {
 	if resp.Actions[0].RiskLevel != RiskLow {
 		t.Errorf("copy of a single file should be RiskLow, got %q", resp.Actions[0].RiskLevel)
 	}
-	target := filepath.Join(project, ".reasonix", "skills", "beta", "SKILL.md")
+	target := filepath.Join(project, ".agents", "skills", "beta", "SKILL.md")
 	if raw, err := os.ReadFile(target); err != nil || !strings.Contains(string(raw), "Beta helper") {
 		t.Fatalf("copied skill = %q err=%v", raw, err)
 	}
@@ -264,7 +264,7 @@ func TestApplyLocalSkillFileCopiesToProject(t *testing.T) {
 func TestApplyLocalSkillFileDoesNotShadowFlatCompatInstall(t *testing.T) {
 	project := t.TempDir()
 	home := t.TempDir()
-	existing := filepath.Join(project, ".reasonix", "skills", "beta.md")
+	existing := filepath.Join(project, ".agents", "skills", "beta.md")
 	writeFile(t, existing, "---\nname: beta\ndescription: Existing beta\n---\nold")
 	src := filepath.Join(t.TempDir(), "beta.md")
 	writeFile(t, src, "---\nname: beta\ndescription: New beta\n---\nnew")
@@ -307,14 +307,14 @@ func TestApplyLocalSKILLFileCopiesSiblingResources(t *testing.T) {
 	if resp.Actions[0].RiskLevel != RiskMedium {
 		t.Fatalf("directory package copy should be RiskMedium, got %q", resp.Actions[0].RiskLevel)
 	}
-	target := filepath.Join(project, ".reasonix", "skills", "frontend-design", "SKILL.md")
+	target := filepath.Join(project, ".agents", "skills", "frontend-design", "SKILL.md")
 	if resp.Actions[0].CanonicalPath != target {
 		t.Fatalf("canonicalPath = %q, want %q", resp.Actions[0].CanonicalPath, target)
 	}
-	if _, err := os.Stat(filepath.Join(project, ".reasonix", "skills", "frontend-design", "references", "style.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "frontend-design", "references", "style.md")); err != nil {
 		t.Fatalf("reference file should be copied with SKILL.md source: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(project, ".reasonix", "skills", "frontend-design", "scripts", "lint.sh")); err != nil {
+	if _, err := os.Stat(filepath.Join(project, ".agents", "skills", "frontend-design", "scripts", "lint.sh")); err != nil {
 		t.Fatalf("script file should be copied with SKILL.md source: %v", err)
 	}
 	st := skill.New(skill.Options{HomeDir: home, ProjectRoot: project, DisableBuiltins: true})
@@ -351,7 +351,7 @@ func TestApplyLocalSkillLinkMode(t *testing.T) {
 	if resp.Actions[0].RiskLevel != RiskMedium && resp.Actions[0].RiskLevel != RiskHigh {
 		t.Errorf("link mode should be at least RiskMedium, got %q", resp.Actions[0].RiskLevel)
 	}
-	target := filepath.Join(project, ".reasonix", "skills", "gamma", "SKILL.md")
+	target := filepath.Join(project, ".agents", "skills", "gamma", "SKILL.md")
 	if fi, err := os.Lstat(target); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("target should be a symlink: lstat err=%v mode=%v", err, fi.Mode())
 	}
@@ -1194,7 +1194,7 @@ func TestPlanMarkdownSkillURL(t *testing.T) {
 func TestUninstallRemovesSkillByName(t *testing.T) {
 	project := t.TempDir()
 	home := t.TempDir()
-	target := filepath.Join(project, ".reasonix", "skills", "doomed.md")
+	target := filepath.Join(project, ".agents", "skills", "doomed.md")
 	writeFile(t, target, "---\nname: doomed\ndescription: Doomed\n---\nbody")
 
 	tl := NewTool(Options{ProjectRoot: project, HomeDir: home})
@@ -1288,7 +1288,7 @@ func TestUninstallRemovesMCPAndDisconnects(t *testing.T) {
 func TestUninstallWithoutScopePrefersProjectSkill(t *testing.T) {
 	project := t.TempDir()
 	home := t.TempDir()
-	projectTarget := filepath.Join(project, ".reasonix", "skills", "dupe.md")
+	projectTarget := filepath.Join(project, ".agents", "skills", "dupe.md")
 	globalTarget := filepath.Join(home, ".reasonix", "skills", "dupe.md")
 	writeFile(t, projectTarget, "---\nname: dupe\ndescription: Project\n---\nbody")
 	writeFile(t, globalTarget, "---\nname: dupe\ndescription: Global\n---\nbody")

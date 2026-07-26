@@ -1799,7 +1799,7 @@ export const en = {
   "settings.hooksProject": "Project",
   "settings.hooksPath": "Settings file",
   "settings.hooksPathGlobalHint": "This scope is saved to your global settings file.",
-  "settings.hooksPathProjectHint": "Project hooks are saved to .reasonix/settings.json in the current workspace.",
+  "settings.hooksPathProjectHint": "Project hooks are saved to .agents/settings.json in the current workspace.",
   "settings.hooksPathCopy": "Copy path",
   "settings.hooksPathCopied": "Settings file path copied.",
   "settings.hooksPathUnavailable": "No project settings file is available",
@@ -2179,7 +2179,7 @@ export const en = {
   "mock.changedFile1Prompt": "Update draft spec v0.3",
   "mock.changedFile2Prompt": "Record project context",
   "mock.changedFile1Path": "docs/dev-standard.md",
-  "mock.changedFile2Path": ".reasonix/project.md",
+  "mock.changedFile2Path": ".agents/project.md",
 };
 
 export type DictKey = keyof typeof en;

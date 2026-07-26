@@ -974,7 +974,7 @@ function makeMockApp(): AppBindings {
     { name: "init", description: "Scaffold a REASONIX.md for this repo", scope: "builtin", runAs: "inline", enabled: true },
   ];
   let capSkillRoots: SkillRootView[] = [
-    { dir: "~/projects/reasonix/.reasonix/skills", scope: "project", priority: 1, status: "missing", configured: false, removable: true, skills: 0 },
+    { dir: "~/projects/reasonix/.agents/skills", scope: "project", priority: 1, status: "missing", configured: false, removable: true, skills: 0 },
     {
       dir: "~/my-skills",
       scope: "custom",
@@ -1265,7 +1265,7 @@ function makeMockApp(): AppBindings {
     },
     project: {
       scope: "project",
-      path: "./.reasonix/settings.json",
+      path: "./.agents/settings.json",
       projectRoot: "/mock/project",
       trusted: false,
       events: hookEvents,
@@ -2452,7 +2452,7 @@ function makeMockApp(): AppBindings {
             findingCount: 1,
             openCriteria: [],
             blocker: "",
-            taskPath: "/tmp/mock/.reasonix/autoresearch/mock-autoresearch",
+            taskPath: "/tmp/mock/.agents/autoresearch/mock-autoresearch",
             nextRequiredAction: "continue with the next evidence-producing step",
           };
         },
@@ -2470,7 +2470,7 @@ function makeMockApp(): AppBindings {
             findingCount: 1,
             openCriteria: [],
             blocker: "",
-            taskPath: "/tmp/mock/.reasonix/autoresearch/mock-autoresearch",
+            taskPath: "/tmp/mock/.agents/autoresearch/mock-autoresearch",
             nextRequiredAction: "continue with the next evidence-producing step",
           };
         },
@@ -2488,7 +2488,7 @@ function makeMockApp(): AppBindings {
             findingCount: 1,
             openCriteria: [],
             blocker: "",
-            taskPath: "/tmp/mock/.reasonix/autoresearch/mock-autoresearch",
+            taskPath: "/tmp/mock/.agents/autoresearch/mock-autoresearch",
             nextRequiredAction: "continue with the next evidence-producing step",
           }];
         },
@@ -2872,17 +2872,17 @@ function makeMockApp(): AppBindings {
       console.info("mock RevealPath", path);
     },
     async SavePastedImage(dataUrl: string) {
-      const path = `.reasonix/attachments/mock-${mockAttachmentDataURLs.size + 1}.png`;
+      const path = `.agents/attachments/mock-${mockAttachmentDataURLs.size + 1}.png`;
       mockAttachmentDataURLs.set(path, dataUrl);
       return path;
     },
     async SaveClipboardImage() {
-      const path = `.reasonix/attachments/mock-clipboard-${mockAttachmentDataURLs.size + 1}.png`;
+      const path = `.agents/attachments/mock-clipboard-${mockAttachmentDataURLs.size + 1}.png`;
       mockAttachmentDataURLs.set(path, mockPreviewImageDataURL);
       return path;
     },
     async SavePastedFile(name: string, dataUrl: string) {
-      const path = `.reasonix/attachments/mock-${name}`;
+      const path = `.agents/attachments/mock-${name}`;
       mockAttachmentDataURLs.set(path, dataUrl);
       return path;
     },
@@ -2911,7 +2911,7 @@ function makeMockApp(): AppBindings {
         const tokenName = name.replace(/[^\w.-]+/g, "-") || "folder";
         return { kind: "workspace" as const, path: `__reasonix_external_folder/mock/${tokenName}`, isDir: true, displayPath: path };
       }
-      const attachmentPath = `.reasonix/attachments/mock-${name}`;
+      const attachmentPath = `.agents/attachments/mock-${name}`;
       mockAttachmentDataURLs.set(attachmentPath, mockPreviewImageDataURL);
       return { kind: "attachment" as const, path: attachmentPath };
     },
@@ -3032,7 +3032,7 @@ function makeMockApp(): AppBindings {
     },
     async AcceptSkillSuggestion(suggestion: SkillSuggestion) {
       emit({ kind: "notice", level: "info", text: `created suggested skill → ${suggestion.name}` });
-      return `.reasonix/skills/${suggestion.name}/SKILL.md`;
+      return `.agents/skills/${suggestion.name}/SKILL.md`;
     },
     async MemorySuggestionsForTab(_tabID: string) {
       return this.MemorySuggestions();

@@ -436,16 +436,20 @@ func MemoryUserDir() string {
 }
 
 // ConventionDirs are the parent directories scanned for agent assets (skills,
-// commands), in canonical-first order. .reasonix is ours; .agents / .agent /
-// .claude let users drop in assets authored for other agent tools without moving
-// files. Shared so skills (internal/skill) and commands (CommandDirs) discover
-// the same set. Note: hooks are NOT scanned across these — a .claude/settings.json
-// uses a different hook schema that can't be parsed as ours, so hooks stay in
-// .reasonix/settings.json (see internal/hook).
-var ConventionDirs = []string{".reasonix", ".agents", ".agent", ".claude"}
+// commands), in canonical-first order. .agents is canonical; .reasonix, .agent,
+// and .claude remain compatible discovery locations. Shared so skills
+// (internal/skill) and commands (CommandDirs) discover the same set. Note: hooks
+// are not scanned across conventions because their schemas differ; Reasonix hooks
+// use .agents/settings.json (see internal/hook).
+// ProjectDirname is the canonical project-local directory for Reasonix assets.
+// .reasonix remains a compatibility discovery location, but new project data is
+// always created under .agents.
+const ProjectDirname = ".agents"
+
+var ConventionDirs = []string{ProjectDirname, ".reasonix", ".agent", ".claude"}
 
 // conventionSubdirsAsc joins sub under each ConventionDir of base, in ascending
-// priority (reverse of ConventionDirs) so the canonical .reasonix ends up the
+// priority (reverse of ConventionDirs) so the canonical .agents ends up the
 // highest-priority entry — command.Load lets a later directory win on a clash.
 func conventionSubdirsAsc(base, sub string) []string {
 	out := make([]string, 0, len(ConventionDirs))
@@ -460,7 +464,7 @@ func conventionSubdirsAsc(base, sub string) []string {
 // on a name clash. Order: home-dir convention dirs (~/.claude/commands …
 // ~/.reasonix/commands), the Reasonix home commands dir, the legacy OS
 // app-support dir if different, then the project's
-// convention dirs (.claude/commands … .reasonix/commands). Scanning the .claude /
+// convention dirs (.claude/commands … .agents/commands). Scanning the .claude /
 // .agents / .agent dirs lets commands authored for other agent tools (same .md +
 // frontmatter format) work here unchanged.
 func CommandDirs() []string {

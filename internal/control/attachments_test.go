@@ -17,7 +17,7 @@ func TestSaveImageDataURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveImageDataURL: %v", err)
 	}
-	if !strings.HasPrefix(got, ".reasonix/attachments/clipboard-") || !strings.HasSuffix(got, ".png") {
+	if !strings.HasPrefix(got, ".agents/attachments/clipboard-") || !strings.HasSuffix(got, ".png") {
 		t.Fatalf("path = %q, want attachment png path", got)
 	}
 }
@@ -97,7 +97,7 @@ func TestSaveImageFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveImageFile: %v", err)
 	}
-	if !strings.HasPrefix(got, ".reasonix/attachments/clipboard-") || !strings.HasSuffix(got, ".png") {
+	if !strings.HasPrefix(got, ".agents/attachments/clipboard-") || !strings.HasSuffix(got, ".png") {
 		t.Fatalf("path = %q, want attachment png path", got)
 	}
 }
@@ -111,7 +111,7 @@ func TestSaveAttachmentFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveAttachmentFile: %v", err)
 	}
-	if !strings.HasPrefix(got, ".reasonix/attachments/clipboard-") || !strings.HasSuffix(got, ".pdf") {
+	if !strings.HasPrefix(got, ".agents/attachments/clipboard-") || !strings.HasSuffix(got, ".pdf") {
 		t.Fatalf("path = %q, want attachment pdf path", got)
 	}
 	if data, err := os.ReadFile(got); err != nil || string(data) != "%PDF-1.4 body" {
@@ -183,7 +183,7 @@ func TestImageDataURLRejectsOutsideAttachmentDir(t *testing.T) {
 	if _, err := ImageDataURL("x.png"); err == nil {
 		t.Fatal("outside attachment dir should fail")
 	}
-	if _, err := ImageDataURL("../.reasonix/attachments/x.png"); err == nil {
+	if _, err := ImageDataURL("../.agents/attachments/x.png"); err == nil {
 		t.Fatal("traversal path should fail")
 	}
 }
@@ -207,7 +207,7 @@ func TestImageDataURLRejectsSymlinkFile(t *testing.T) {
 
 func TestImageDataURLRejectsSymlinkAttachmentDir(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.Mkdir(".reasonix", 0o755); err != nil {
+	if err := os.Mkdir(".agents", 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir("elsewhere", 0o755); err != nil {
@@ -216,7 +216,7 @@ func TestImageDataURLRejectsSymlinkAttachmentDir(t *testing.T) {
 	if err := os.Symlink("../elsewhere", filepath.Join(".reasonix", "attachments")); err != nil {
 		t.Skipf("symlink unsupported: %v", err)
 	}
-	if _, err := ImageDataURL(".reasonix/attachments/x.png"); err == nil {
+	if _, err := ImageDataURL(".agents/attachments/x.png"); err == nil {
 		t.Fatal("symlink attachment directory should fail")
 	}
 }

@@ -103,7 +103,7 @@ func (t *installSourceTool) skillInstallRoot(scope string) (string, error) {
 		}
 		return filepath.Join(t.reasonixHome, skill.SkillsDirname), nil
 	}
-	return filepath.Join(t.root, ".reasonix", skill.SkillsDirname), nil
+	return filepath.Join(t.root, config.ProjectDirname, skill.SkillsDirname), nil
 }
 
 // skillCanonicalPath computes the canonical install destination:

@@ -464,7 +464,7 @@ func TestAutoResearchStatusSurfaceForActiveTab(t *testing.T) {
 	if current.TaskPath == "" || current.Status != control.GoalStatusRunning {
 		t.Fatalf("AutoResearchCurrent missing status/path: %+v", current)
 	}
-	heartbeatPath := filepath.Join(root, ".reasonix", "autoresearch", current.TaskID, "logs", "heartbeat.jsonl")
+	heartbeatPath := filepath.Join(root, ".agents", "autoresearch", current.TaskID, "logs", "heartbeat.jsonl")
 	if err := os.WriteFile(heartbeatPath, []byte(`{"status":"turn_done","iteration":1,"created_at":"2026-06-30T00:00:00Z"}`+"\n"), 0o644); err != nil {
 		t.Fatalf("write heartbeat: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestAutoResearchFindingsAreLoadedOnDemand(t *testing.T) {
 	if current.TaskID == "" {
 		t.Fatal("expected active AutoResearch task")
 	}
-	findingsPath := filepath.Join(root, ".reasonix", "autoresearch", current.TaskID, "state", "findings.jsonl")
+	findingsPath := filepath.Join(root, ".agents", "autoresearch", current.TaskID, "state", "findings.jsonl")
 	if err := os.WriteFile(findingsPath, []byte(
 		`{"id":"f1","kind":"test","summary":"old","source":"command","command":"go test ./...","accepted":true,"created_at":"2026-06-29T10:00:00Z"}`+"\n"+
 			`{"id":"f2","kind":"review","summary":"new","source":"manual","accepted":true,"created_at":"2026-06-29T11:00:00Z"}`+"\n",

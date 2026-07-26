@@ -14,10 +14,12 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"reasonix/internal/config"
 )
 
 var safeTaskID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
-var explicitTaskPath = regexp.MustCompile(`\.reasonix/autoresearch/([A-Za-z0-9][A-Za-z0-9._-]*)/?`)
+var explicitTaskPath = regexp.MustCompile(`(?:\.agents|\.reasonix)/autoresearch/([A-Za-z0-9][A-Za-z0-9._-]*)/?`)
 
 type Store struct {
 	workspaceRoot string
@@ -32,7 +34,7 @@ func NewStore(workspaceRoot string) *Store {
 	}
 	return &Store{
 		workspaceRoot: workspaceRoot,
-		root:          filepath.Join(workspaceRoot, ".reasonix", "autoresearch"),
+		root:          filepath.Join(workspaceRoot, config.ProjectDirname, "autoresearch"),
 		taskLocks:     map[string]*sync.Mutex{},
 	}
 }

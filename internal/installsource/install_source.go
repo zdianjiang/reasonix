@@ -453,6 +453,18 @@ func (t *installSourceTool) uninstallActionsForScope(name, scope string) []actio
 // skill of the given name in the chosen scope. The bool reports whether
 // the path is a real install (Lstat succeeded). Both flat (<name>.md) and
 // directory (<name>/) layouts are checked.
+func skillPathInRoot(root, name string) (string, bool) {
+	flat := filepath.Join(root, name+".md")
+	if _, err := lstat(flat); err == nil {
+		return flat, true
+	}
+	dir := filepath.Join(root, name)
+	if _, err := lstat(filepath.Join(dir, skill.SkillFile)); err == nil {
+		return dir, true
+	}
+	return "", false
+}
+
 func (t *installSourceTool) resolveSkillPath(name, scope string) (string, bool) {
 	if !config.IsValidSkillName(name) {
 		return "", false
@@ -464,7 +476,13 @@ func (t *installSourceTool) resolveSkillPath(name, scope string) (string, bool) 
 		}
 		root = filepath.Join(t.reasonixHome, skill.SkillsDirname)
 	} else {
-		root = filepath.Join(t.root, ".reasonix", skill.SkillsDirname)
+		for _, dir := range config.ConventionDirs {
+			candidate := filepath.Join(t.root, dir, skill.SkillsDirname)
+			if path, ok := skillPathInRoot(candidate, name); ok {
+				return path, true
+			}
+		}
+		return "", false
 	}
 	flat := filepath.Join(root, name+".md")
 	if _, err := lstat(flat); err == nil {

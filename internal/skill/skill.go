@@ -4,7 +4,7 @@
 // a tool result, a "subagent" skill runs in an isolated child loop and returns
 // only its final answer. Project scope wins over global; only names+descriptions
 // enter the cache-stable system-prompt index (see index.go) — bodies load on
-// demand. Discovery scans several conventions (.reasonix / .agents / .agent /
+// demand. Discovery scans several conventions (.agents / .reasonix / .agent /
 // .claude under the project root and the home dir — see config.ConventionDirs) so
 // skills authored for other agent tools migrate in unchanged. Directory skills
 // use <name>/SKILL.md; flat <name>.md files from Claude roots are loaded only
@@ -192,7 +192,7 @@ type discoveryRoot struct {
 }
 
 // roots returns the discovery directories, highest priority first: the
-// convention dirs (config.ConventionDirs: .reasonix / .agents / .agent / .claude)
+// convention dirs (config.ConventionDirs: .agents / .reasonix / .agent / .claude)
 // under the project root → custom paths → the Reasonix home skills dir → other
 // home-dir convention dirs. A later root never overrides an earlier one.
 func (s *Store) roots() []discoveryRoot {
@@ -603,7 +603,7 @@ func (s *Store) CreateWithContent(name string, scope Scope, content string) (str
 		if s.projectRoot == "" {
 			return "", fmt.Errorf("project scope requires a workspace — run from a project directory, or use global scope")
 		}
-		root = filepath.Join(s.projectRoot, ".reasonix", SkillsDirname)
+		root = filepath.Join(s.projectRoot, config.ProjectDirname, SkillsDirname)
 	default:
 		root = s.globalSkillsRoot()
 	}

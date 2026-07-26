@@ -40,7 +40,7 @@ func TestCreateTaskCreatesHostOwnedLayoutAndInitialState(t *testing.T) {
 	if task.ID != "20260629-153000-find-the-root-cause-of-ui-lag" {
 		t.Fatalf("task id = %q", task.ID)
 	}
-	wantRoot := filepath.Join(root, ".reasonix", "autoresearch", task.ID)
+	wantRoot := filepath.Join(root, ".agents", "autoresearch", task.ID)
 	if task.Root != wantRoot {
 		t.Fatalf("task root = %q, want %q", task.Root, wantRoot)
 	}
@@ -137,10 +137,10 @@ func TestLoadTaskRejectsSymlinkTaskDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outside, "state", "task_spec.json"), []byte(`{"task_id":"20260630-120000-symlink-task","goal":"escape","success_criteria":[]}`), 0o644); err != nil {
 		t.Fatalf("write outside spec: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".reasonix", "autoresearch"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "autoresearch"), 0o755); err != nil {
 		t.Fatalf("create autoresearch root: %v", err)
 	}
-	if err := os.Symlink(outside, filepath.Join(root, ".reasonix", "autoresearch", taskID)); err != nil {
+	if err := os.Symlink(outside, filepath.Join(root, ".agents", "autoresearch", taskID)); err != nil {
 		t.Fatalf("create symlink task: %v", err)
 	}
 

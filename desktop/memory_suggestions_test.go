@@ -131,11 +131,11 @@ func TestMemorySuggestionsForTabUsesSelectedTab(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptSkillSuggestionForTab: %v", err)
 	}
-	wantSkillPath := filepath.Join(selectedCwd, ".reasonix", "skills", "selected-workflow", "SKILL.md")
+	wantSkillPath := filepath.Join(selectedCwd, ".agents", "skills", "selected-workflow", "SKILL.md")
 	if skillPath != wantSkillPath {
 		t.Fatalf("skill path = %q, want %q", skillPath, wantSkillPath)
 	}
-	if _, err := os.Stat(filepath.Join(activeCwd, ".reasonix", "skills", "selected-workflow", "SKILL.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(activeCwd, ".agents", "skills", "selected-workflow", "SKILL.md")); !os.IsNotExist(err) {
 		t.Fatalf("active workspace should not receive selected skill, stat err = %v", err)
 	}
 	body, err := os.ReadFile(skillPath)
@@ -184,7 +184,7 @@ func TestMemorySuggestionsAcceptSkillCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptSkillSuggestion: %v", err)
 	}
-	wantSuffix := filepath.Join(".reasonix", "skills", "reasonix-pr-followup", "SKILL.md")
+	wantSuffix := filepath.Join(".agents", "skills", "reasonix-pr-followup", "SKILL.md")
 	if !strings.HasSuffix(path, wantSuffix) {
 		t.Fatalf("skill path = %q, want suffix %q", path, wantSuffix)
 	}

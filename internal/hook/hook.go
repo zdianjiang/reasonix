@@ -2,7 +2,7 @@
 // PreToolUse / PostToolUse fire around each tool call, PermissionRequest fires
 // before a tool approval prompt is shown, UserPromptSubmit before a turn, Stop
 // after it. Hooks come from settings.json — a project
-// (.reasonix/settings.json, only when the project is trusted) and a global
+// (.agents/settings.json, only when the project is trusted) and a global
 // (~/.reasonix/settings.json) file. A hook's exit
 // code is its verdict: 0 = pass, 2 = block (only on the gating events), other =
 // warn. The payload is delivered as JSON on stdin; output is captured (capped)
@@ -133,10 +133,12 @@ func (h ResolvedHook) timeout() time.Duration {
 	return defaultTimeout(h.Event)
 }
 
-// SettingsDirname / SettingsFilename locate a scope's settings.json.
+// SettingsDirname is the user-global Reasonix-home directory name. Project
+// settings use ProjectSettingsDirname instead.
 const (
-	SettingsDirname  = ".reasonix"
-	SettingsFilename = "settings.json"
+	SettingsDirname        = ".reasonix"
+	ProjectSettingsDirname = config.ProjectDirname
+	SettingsFilename       = "settings.json"
 )
 
 // GlobalSettingsPath is <Reasonix home>/settings.json (homeDir overrides ~ for
@@ -145,9 +147,9 @@ func GlobalSettingsPath(homeDir string) string {
 	return filepath.Join(reasonixHome(homeDir), SettingsFilename)
 }
 
-// ProjectSettingsPath is <root>/.reasonix/settings.json.
+// ProjectSettingsPath is <root>/.agents/settings.json.
 func ProjectSettingsPath(projectRoot string) string {
-	return filepath.Join(projectRoot, SettingsDirname, SettingsFilename)
+	return filepath.Join(projectRoot, ProjectSettingsDirname, SettingsFilename)
 }
 
 // LoadOptions configure Load. Project hooks load only when Trusted; global hooks
@@ -167,6 +169,14 @@ func Load(opts LoadOptions) []ResolvedHook {
 		p := ProjectSettingsPath(opts.ProjectRoot)
 		if s := readSettings(p); s != nil {
 			appendResolved(&out, s, ScopeProject, p)
+		} else if !pathExists(p) {
+			// Keep trusted projects created by older releases working while all new
+			// project settings are written to .agents/settings.json.
+			if legacy := legacyProjectSettingsPath(opts.ProjectRoot); legacy != "" {
+				if s := readSettings(legacy); s != nil {
+					appendResolved(&out, s, ScopeProject, legacy)
+				}
+			}
 		}
 	}
 	appendPluginHooks(&out, reasonixHome(opts.HomeDir), opts.ProjectRoot)
@@ -188,6 +198,9 @@ func Load(opts LoadOptions) []ResolvedHook {
 // whether to prompt the user to trust the project.
 func ProjectDefinesHooks(projectRoot string) bool {
 	s := readSettings(ProjectSettingsPath(projectRoot))
+	if s == nil && !pathExists(ProjectSettingsPath(projectRoot)) {
+		s = readSettings(legacyProjectSettingsPath(projectRoot))
+	}
 	if s == nil {
 		return false
 	}
@@ -211,6 +224,13 @@ func readSettings(path string) *Settings {
 		return nil // malformed → treat as no hooks, don't crash
 	}
 	return &s
+}
+
+func legacyProjectSettingsPath(projectRoot string) string {
+	if strings.TrimSpace(projectRoot) == "" {
+		return ""
+	}
+	return filepath.Join(projectRoot, ".reasonix", SettingsFilename)
 }
 
 func pathExists(path string) bool {

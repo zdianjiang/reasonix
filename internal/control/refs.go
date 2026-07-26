@@ -44,7 +44,7 @@ type refKind int
 const (
 	refResource refKind = iota // an MCP resource: @<server>:<uri>
 	refFile                    // a local file or directory: @<path>
-	refImage                   // a local image attachment: @.reasonix/attachments/<file>
+	refImage                   // a local image attachment: @.agents/attachments/<file>
 )
 
 // ref is a resolved @reference found in a submitted line.
@@ -112,7 +112,7 @@ func classifyRef(token string, known map[string]bool, exists func(string) bool) 
 }
 
 func isAttachmentRef(token string) bool {
-	return strings.HasPrefix(filepath.ToSlash(token), ".reasonix/attachments/")
+	return strings.HasPrefix(filepath.ToSlash(token), ".agents/attachments/")
 }
 
 func isImageAttachmentRef(token string) bool {

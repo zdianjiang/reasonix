@@ -4777,7 +4777,7 @@ func hasFile(dir, name string) bool {
 func listSourceDirs(root string, maxDepth int) []string {
 	skip := map[string]bool{
 		".git": true, ".github": true, "node_modules": true,
-		"vendor": true, ".reasonix": true, "desktop": true,
+		"vendor": true, ".agents": true, ".reasonix": true, "desktop": true,
 		"dist": true, "build": true, ".cache": true, "bin": true,
 	}
 	var dirs []string

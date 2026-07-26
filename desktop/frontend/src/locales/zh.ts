@@ -1801,7 +1801,7 @@ export const zh: Record<DictKey, string> = {
   "settings.hooksProject": "项目",
   "settings.hooksPath": "设置文件",
   "settings.hooksPathGlobalHint": "当前范围保存到这个全局配置文件。",
-  "settings.hooksPathProjectHint": "项目 hooks 保存到当前工作区的 .reasonix/settings.json。",
+  "settings.hooksPathProjectHint": "项目 hooks 保存到当前工作区的 .agents/settings.json。",
   "settings.hooksPathCopy": "复制路径",
   "settings.hooksPathCopied": "已复制设置文件路径。",
   "settings.hooksPathUnavailable": "没有可用的项目设置文件",
@@ -2181,5 +2181,5 @@ export const zh: Record<DictKey, string> = {
   "mock.changedFile1Prompt": "更新规范草案 v0.3",
   "mock.changedFile2Prompt": "记录项目上下文",
   "mock.changedFile1Path": "docs/dev-standard.md",
-  "mock.changedFile2Path": ".reasonix/project.md",
+  "mock.changedFile2Path": ".agents/project.md",
 };

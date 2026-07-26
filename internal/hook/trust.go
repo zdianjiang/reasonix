@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// Trust gates project hooks. A project's .reasonix/settings.json can run
+// Trust gates project hooks. A project's .agents/settings.json can run
 // arbitrary shell commands, so cloning a repo must not silently execute its
 // hooks: project hooks load only after the user explicitly trusts that project
 // root. The trust flag lives in user-global state (~/.reasonix/trust.json),

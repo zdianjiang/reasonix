@@ -829,3 +829,17 @@ func TestCreateRefusesOverwrite(t *testing.T) {
 		t.Error("create should refuse to shadow an existing legacy flat skill")
 	}
 }
+
+func TestCreateProjectUsesAgentsDirectory(t *testing.T) {
+	project := t.TempDir()
+	st := New(Options{HomeDir: t.TempDir(), ProjectRoot: project, DisableBuiltins: true})
+
+	path, err := st.Create("project-skill", ScopeProject)
+	if err != nil {
+		t.Fatalf("Create project skill: %v", err)
+	}
+	want := filepath.Join(project, ".agents", SkillsDirname, "project-skill", SkillFile)
+	if path != want {
+		t.Fatalf("project skill path = %q, want %q", path, want)
+	}
+}

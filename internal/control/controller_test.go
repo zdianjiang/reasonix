@@ -518,25 +518,25 @@ func TestResumeRestoresRunningAutoResearchGoalFromSidecar(t *testing.T) {
 	}
 	path := filepath.Join(root, "session.jsonl")
 	taskID := "investigate-runtime-resume"
-	if err := os.MkdirAll(filepath.Join(root, ".reasonix", "autoresearch", taskID, "state"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "autoresearch", taskID, "state"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".reasonix", "autoresearch", taskID, "logs"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agents", "autoresearch", taskID, "logs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".reasonix", "autoresearch", taskID, "state", "task_spec.json"), []byte(`{"id":"investigate-runtime-resume","goal":"investigate runtime resume","status":"running","created_at":"2026-06-30T00:00:00Z","updated_at":"2026-06-30T00:00:00Z","success_criteria":[{"id":"criterion-1","description":"resume keeps AutoResearch active","required":true}]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agents", "autoresearch", taskID, "state", "task_spec.json"), []byte(`{"id":"investigate-runtime-resume","goal":"investigate runtime resume","status":"running","created_at":"2026-06-30T00:00:00Z","updated_at":"2026-06-30T00:00:00Z","success_criteria":[{"id":"criterion-1","description":"resume keeps AutoResearch active","required":true}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".reasonix", "autoresearch", taskID, "state", "progress.json"), []byte(`{"task_id":"investigate-runtime-resume","iteration":2,"current_direction":"verify resume","stale_count":1,"pivot_count":0,"updated_at":"2026-06-30T00:00:00Z"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agents", "autoresearch", taskID, "state", "progress.json"), []byte(`{"task_id":"investigate-runtime-resume","iteration":2,"current_direction":"verify resume","stale_count":1,"pivot_count":0,"updated_at":"2026-06-30T00:00:00Z"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".reasonix", "autoresearch", taskID, "state", "directions_tried.json"), []byte(`{"task_id":"investigate-runtime-resume","directions":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agents", "autoresearch", taskID, "state", "directions_tried.json"), []byte(`{"task_id":"investigate-runtime-resume","directions":[]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".reasonix", "autoresearch", taskID, "state", "findings.jsonl"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agents", "autoresearch", taskID, "state", "findings.jsonl"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".reasonix", "autoresearch", taskID, "logs", "heartbeat.jsonl"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agents", "autoresearch", taskID, "logs", "heartbeat.jsonl"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(goalStatePath(path), []byte(`{"goal":"investigate runtime resume","status":"running","researchMode":1,"autoResearchTaskID":"investigate-runtime-resume"}`), 0o644); err != nil {
@@ -3517,7 +3517,7 @@ func TestReloadCommandsFromFilesystem(t *testing.T) {
 	t.Setenv("AppData", filepath.Join(home, "AppData"))
 
 	wsRoot := t.TempDir()
-	cmdDir := filepath.Join(wsRoot, ".reasonix", "commands")
+	cmdDir := filepath.Join(wsRoot, ".agents", "commands")
 	writeCmdFile(t, cmdDir, "review", "Review code", "Review $1")
 	writeCmdFile(t, cmdDir, "test", "Run tests", "Test $1")
 
@@ -3615,7 +3615,7 @@ func TestReloadCommandsDeleteFile(t *testing.T) {
 	t.Setenv("AppData", filepath.Join(home, "AppData"))
 
 	wsRoot := t.TempDir()
-	cmdDir := filepath.Join(wsRoot, ".reasonix", "commands")
+	cmdDir := filepath.Join(wsRoot, ".agents", "commands")
 	writeCmdFile(t, cmdDir, "alpha", "Alpha cmd", "Alpha $1")
 	writeCmdFile(t, cmdDir, "beta", "Beta cmd", "Beta $1")
 
@@ -3670,7 +3670,7 @@ func TestReloadCommandsMalformedFile(t *testing.T) {
 	t.Setenv("AppData", filepath.Join(home, "AppData"))
 
 	wsRoot := t.TempDir()
-	cmdDir := filepath.Join(wsRoot, ".reasonix", "commands")
+	cmdDir := filepath.Join(wsRoot, ".agents", "commands")
 	writeCmdFile(t, cmdDir, "good", "Good cmd", "Good $1")
 
 	// Write a malformed file (no valid frontmatter)
@@ -3712,8 +3712,8 @@ func TestReloadCommandsMalformedFile(t *testing.T) {
 
 // TestReloadCommandsSameNameAcrossDirs verifies that when the same command
 // name exists in multiple convention directories, the later-scanned directory
-// (higher priority) wins. ConventionDirs = [".reasonix", ".agents", ".agent",
-// ".claude"], scanned in reverse, so .reasonix is highest priority.
+// (higher priority) wins. ConventionDirs = [".agents", ".reasonix", ".agent",
+// ".claude"], scanned in reverse, so .agents is highest priority.
 func TestReloadCommandsSameNameAcrossDirs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -3727,8 +3727,8 @@ func TestReloadCommandsSameNameAcrossDirs(t *testing.T) {
 	claudeDir := filepath.Join(wsRoot, ".claude", "commands")
 	writeCmdFile(t, claudeDir, "greet", "Claude greet", "Hello from Claude: $1")
 
-	// Higher priority: .reasonix/commands
-	reasonixDir := filepath.Join(wsRoot, ".reasonix", "commands")
+	// Higher priority: .agents/commands
+	reasonixDir := filepath.Join(wsRoot, ".agents", "commands")
 	writeCmdFile(t, reasonixDir, "greet", "Reasonix greet", "Hello from Reasonix: $1")
 
 	reg := tool.NewRegistry()
@@ -3754,13 +3754,13 @@ func TestReloadCommandsSameNameAcrossDirs(t *testing.T) {
 		t.Fatalf("expected exactly 1 'greet' command, got %d", count)
 	}
 
-	// The winning version should be from .reasonix (highest priority)
+	// The winning version should be from .agents (highest priority)
 	sent, ok := c.CustomCommand("/greet world")
 	if !ok {
 		t.Fatal("/greet should be found")
 	}
 	if !strings.Contains(sent, "Hello from Reasonix") {
-		t.Errorf("expected .reasonix version to win, got render: %q", sent)
+		t.Errorf("expected .agents version to win, got render: %q", sent)
 	}
 }
 
@@ -3775,7 +3775,7 @@ func TestReloadCommandsEmptySet(t *testing.T) {
 	t.Setenv("AppData", filepath.Join(home, "AppData"))
 
 	wsRoot := t.TempDir()
-	cmdDir := filepath.Join(wsRoot, ".reasonix", "commands")
+	cmdDir := filepath.Join(wsRoot, ".agents", "commands")
 	writeCmdFile(t, cmdDir, "temp", "Temp cmd", "Temp $1")
 
 	sk := skill.Skill{
@@ -3838,7 +3838,7 @@ func TestReloadCommandsDesktopManagementNotice(t *testing.T) {
 	t.Setenv("AppData", filepath.Join(home, "AppData"))
 
 	wsRoot := t.TempDir()
-	cmdDir := filepath.Join(wsRoot, ".reasonix", "commands")
+	cmdDir := filepath.Join(wsRoot, ".agents", "commands")
 	writeCmdFile(t, cmdDir, "hello", "Greet", "Hello $1")
 	writeCmdFile(t, cmdDir, "review", "Review code", "Review $1")
 
